@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AvatarLayers } from "../avatar/Avatar";
 import { FURNITURE, WALL_MOUNTED } from "./furniture";
 import { ROOMS, ROOM_ORDER, type RoomId } from "../data/rooms";
@@ -45,6 +45,9 @@ interface DragState {
   /** Client pixels per room unit, so pointer movement maps onto the scene. */
   scale: number;
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  /** Kept so exactly these listeners can be detached again when the drag ends. */
+  move: (e: PointerEvent) => void;
+  end: (e: PointerEvent) => void;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -94,7 +97,20 @@ export function ExploreMode({
     return rect && rect.width > 0 ? rect.width / ROOM_W : 1;
   }
 
+  /** Detach whatever a drag attached, whether it ended normally or the component went away. */
+  function releaseListeners() {
+    const drag = dragRef.current;
+    if (!drag) return;
+    window.removeEventListener("pointermove", drag.move);
+    window.removeEventListener("pointerup", drag.end);
+    window.removeEventListener("pointercancel", drag.end);
+  }
+
+  useEffect(() => releaseListeners, []);
+
   function startDrag(e: ReactPointerEvent<SVGGElement>, target: DragTarget) {
+    // Stops the browser starting its own drag of the SVG, which would swallow the gesture.
+    e.preventDefault();
     const scale = currentScale();
     let originX: number;
     let originY: number;
@@ -131,6 +147,30 @@ export function ExploreMode({
       }
     }
 
+    // Listeners go on the window rather than the dragged element. Pointer capture on an SVG
+    // child plus React's delegated events is fragile — a touch that the browser decides is a
+    // scroll fires pointercancel and the drag dies after a few pixels.
+    const move = (ev: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== ev.pointerId) return;
+      ev.preventDefault();
+
+      const x = clamp(drag.originX + (ev.clientX - drag.clientX) / drag.scale, drag.bounds.minX, drag.bounds.maxX);
+      const y = clamp(drag.originY + (ev.clientY - drag.clientY) / drag.scale, drag.bounds.minY, drag.bounds.maxY);
+
+      if (drag.target.kind === "avatar") onMoveAvatar(x, y);
+      else onMoveFurniture(drag.target.id, x, y);
+    };
+
+    const end = (ev: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== ev.pointerId) return;
+      releaseListeners();
+      dragRef.current = null;
+      setDraggingKey(null);
+      playPop();
+    };
+
     dragRef.current = {
       target,
       pointerId: e.pointerId,
@@ -140,36 +180,20 @@ export function ExploreMode({
       originY,
       scale,
       bounds,
+      move,
+      end,
     };
-    e.currentTarget.setPointerCapture(e.pointerId);
+
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+
     setDraggingKey(target.kind === "avatar" ? "avatar" : target.id);
     playTap();
   }
 
-  function onDragMove(e: ReactPointerEvent<SVGGElement>) {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-
-    const x = clamp(drag.originX + (e.clientX - drag.clientX) / drag.scale, drag.bounds.minX, drag.bounds.maxX);
-    const y = clamp(drag.originY + (e.clientY - drag.clientY) / drag.scale, drag.bounds.minY, drag.bounds.maxY);
-
-    if (drag.target.kind === "avatar") onMoveAvatar(x, y);
-    else onMoveFurniture(drag.target.id, x, y);
-  }
-
-  function endDrag(e: ReactPointerEvent<SVGGElement>) {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    dragRef.current = null;
-    setDraggingKey(null);
-    playPop();
-  }
-
   const dragHandlers = (target: DragTarget) => ({
     onPointerDown: (e: ReactPointerEvent<SVGGElement>) => startDrag(e, target),
-    onPointerMove: onDragMove,
-    onPointerUp: endDrag,
-    onPointerCancel: endDrag,
   });
 
   return (

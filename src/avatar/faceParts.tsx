@@ -269,4 +269,29 @@ export const MOUTH_STYLES: Record<string, () => ReactElement> = {
   ),
 
   surprised: () => <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 3} rx={8} ry={9.5} fill={MOUTH_DARK} />,
+
+  /** Dead straight — the deadpan face is half the fun of a dress-up game. */
+  blank: () => (
+    <path
+      d={"M" + (MOUTH.cx - 13) + "," + (MOUTH.cy + 2) + " h26"}
+      stroke="#6b2b3d"
+      strokeWidth={5}
+      strokeLinecap="round"
+      fill="none"
+    />
+  ),
+
+  /** Asymmetric on purpose: one corner up, the other flat, is what reads as a smirk. */
+  smirk: () => (
+    <path
+      d={
+        "M" + (MOUTH.cx - 15) + "," + (MOUTH.cy + 1) +
+        " Q" + (MOUTH.cx - 2) + "," + (MOUTH.cy + 8) + " " + (MOUTH.cx + 14) + "," + (MOUTH.cy - 7)
+      }
+      stroke="#6b2b3d"
+      strokeWidth={5}
+      strokeLinecap="round"
+      fill="none"
+    />
+  ),
 };

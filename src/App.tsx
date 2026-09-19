@@ -3,7 +3,7 @@ import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
 import { DEFAULT_LOOK, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
-import { loadSave, newId, persist, type GameSave } from "./lib/storage";
+import { AVATAR_HOME, loadSave, newId, persist, type GameSave } from "./lib/storage";
 import { isMuted, setMuted } from "./lib/sound";
 
 type Mode = "design" | "explore";
@@ -67,14 +67,41 @@ export function App() {
     setSave((prev) => ({ ...prev, lastRoom: next }));
   }
 
+  function updateRoom(change: (room: GameSave["rooms"][RoomId]) => GameSave["rooms"][RoomId]) {
+    setSave((prev) => ({
+      ...prev,
+      rooms: { ...prev.rooms, [prev.lastRoom]: change(prev.rooms[prev.lastRoom]) },
+    }));
+  }
+
   function toggleFurniture(furnitureId: string) {
-    setSave((prev) => {
-      const current = prev.rooms[prev.lastRoom];
-      const next = current.includes(furnitureId)
-        ? current.filter((f) => f !== furnitureId)
-        : [...current, furnitureId];
-      return { ...prev, rooms: { ...prev.rooms, [prev.lastRoom]: next } };
-    });
+    updateRoom((room) => ({
+      ...room,
+      items: room.items.some((i) => i.id === furnitureId)
+        ? room.items.filter((i) => i.id !== furnitureId)
+        // New pieces land where they were authored, which is a sensible spot by construction.
+        : [...room.items, { id: furnitureId, dx: 0, dy: 0 }],
+    }));
+  }
+
+  function moveFurniture(furnitureId: string, dx: number, dy: number) {
+    updateRoom((room) => ({
+      ...room,
+      items: room.items.map((i) => (i.id === furnitureId ? { ...i, dx, dy } : i)),
+    }));
+  }
+
+  function moveAvatar(x: number, y: number) {
+    updateRoom((room) => ({ ...room, avatarX: x, avatarY: y }));
+  }
+
+  /** Put everything back where it started, for when the room gets into a state. */
+  function tidyUp() {
+    updateRoom((room) => ({
+      items: room.items.map((i) => ({ ...i, dx: 0, dy: 0 })),
+      avatarX: AVATAR_HOME.x,
+      avatarY: AVATAR_HOME.y,
+    }));
   }
 
   return (
@@ -94,9 +121,12 @@ export function App() {
         <ExploreMode
           look={activeLook}
           roomId={save.lastRoom}
-          placed={save.rooms[save.lastRoom]}
+          room={save.rooms[save.lastRoom]}
           onRoomChange={changeRoom}
           onToggleFurniture={toggleFurniture}
+          onMoveFurniture={moveFurniture}
+          onMoveAvatar={moveAvatar}
+          onTidyUp={tidyUp}
           onDesign={() => {
             if (activeLook) setLook(activeLook);
             setEditingId(save.activeId);

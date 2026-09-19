@@ -557,3 +557,34 @@ button {
   place-items: center;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
 }
+
+/* ---------- dragging things around a room ---------- */
+
+.draggable {
+  cursor: grab;
+  /* Without this, a touch-drag scrolls the page instead of moving the furniture. */
+  touch-action: none;
+}
+
+.draggable.is-dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 10px 10px rgba(0, 0, 0, 0.35));
+}
+
+.drawer-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.drawer-row .drawer-handle {
+  width: auto;
+  flex: 1;
+  margin: 0 0 2px;
+}
+
+.drawer-handle-narrow {
+  flex: 0 0 auto !important;
+  padding-left: 16px;
+  padding-right: 16px;
+}

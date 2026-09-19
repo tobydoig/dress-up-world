@@ -1,12 +1,18 @@
 import type { ReactElement } from "react";
 
 /**
- * Furniture is drawn in room coordinates (viewBox 0 0 400 340; back wall down to y=232, floor
- * below that). Each piece is positioned where it looks right rather than being draggable —
- * on a phone, tapping a piece to place it beats fighting a drag gesture, and the room always
- * ends up looking deliberate.
+ * Furniture is drawn in room coordinates with the back wall bottom at y=232. These are the
+ * positions a piece takes when it's first added; from there it can be dragged anywhere, and
+ * only the offset from this authored spot is saved.
  */
 export type FurnitureRender = () => ReactElement;
+
+/**
+ * Pieces that belong up the wall. Everything else is floor-standing and is stopped from being
+ * dragged more than a little way up — enough to put a teddy on a bed, not enough to leave a rug
+ * stuck to the ceiling.
+ */
+export const WALL_MOUNTED = new Set(["poster", "balloons"]);
 
 const WOOD = "#b5763f";
 const WOOD_DARK = "#8d5a2c";

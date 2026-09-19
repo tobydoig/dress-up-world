@@ -229,6 +229,8 @@ export const CATEGORIES: CategoryDef[] = [
       { id: "grin", name: "Big laugh" },
       { id: "open", name: "Ooh!" },
       { id: "surprised", name: "Surprised" },
+      { id: "smirk", name: "Smirk" },
+      { id: "blank", name: "Blank" },
       { id: "frown", name: "Grumpy" },
       { id: "sad", name: "Sad" },
     ],

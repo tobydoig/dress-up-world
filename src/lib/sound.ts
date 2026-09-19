@@ -91,3 +91,9 @@ export function playSparkle(): void {
   tone({ from: 880, duration: 0.14, type: "triangle", gain: 0.13, delay: 0.09 });
   tone({ from: 1320, duration: 0.24, type: "triangle", gain: 0.12, delay: 0.18 });
 }
+
+/** Walking through to the next room. */
+export function playWhoosh(): void {
+  tone({ from: 240, to: 640, duration: 0.2, type: "sine", gain: 0.1 });
+  tone({ from: 480, to: 300, duration: 0.16, type: "triangle", gain: 0.07, delay: 0.05 });
+}

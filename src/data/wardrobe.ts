@@ -6,7 +6,10 @@ export interface AvatarLook {
   hairColour: string;
   eyesId: string;
   irisColour: string;
+  noseId: string | null;
   mouthId: string;
+  blushId: string | null;
+  blushColour: string;
   topId: string | null;
   topColour: string;
   motifId: string | null;
@@ -14,6 +17,12 @@ export interface AvatarLook {
   bottomColour: string;
   shoesId: string | null;
   shoesColour: string;
+  headId: string | null;
+  headColour: string;
+  glassesId: string | null;
+  glassesColour: string;
+  jewelsId: string | null;
+  jewelsColour: string;
 }
 
 export type CategoryId =
@@ -22,8 +31,13 @@ export type CategoryId =
   | "shoes"
   | "motif"
   | "hair"
+  | "head"
+  | "glasses"
+  | "jewels"
   | "eyes"
+  | "nose"
   | "mouth"
+  | "blush"
   | "skin";
 
 export interface WardrobeItem {
@@ -36,7 +50,7 @@ export interface CategoryDef {
   label: string;
   icon: string;
   items: WardrobeItem[];
-  /** Whether "none" is a valid choice (bare feet, no picture on the shirt). */
+  /** Whether "none" is a valid choice (bare feet, no glasses). */
   allowNone: boolean;
   /** Swatches shown under the items; absent when the item itself carries the colour. */
   palette?: string[];
@@ -58,6 +72,16 @@ export const SKIN_TONES = [
 
 export const IRIS_COLOURS = [
   "#5b3a1e", "#8b5a2b", "#2f7d4f", "#2f6fb0", "#4fb8c9", "#7b5cf6", "#3a3346",
+];
+
+export const MAKEUP_COLOURS = [
+  "#ff6f8f", "#ff4d7e", "#ff8f6f", "#ffb3c1", "#e0566f", "#c77dff", "#7b5cf6", "#ffd23f",
+];
+
+/** Golds and silvers first — most jewellery reads better in a metal than a bright. */
+export const ACCESSORY_COLOURS = [
+  "#ffd23f", "#e6e9f2", "#ffb3a0", "#ff6fae", "#ff4d5e", "#c77dff",
+  "#7b5cf6", "#3aa0ff", "#2ed6b8", "#5ed64a", "#fffdfa", "#3a3a4a",
 ];
 
 export const CATEGORIES: CategoryDef[] = [
@@ -128,6 +152,48 @@ export const CATEGORIES: CategoryDef[] = [
     ],
   },
   {
+    id: "head",
+    label: "Head",
+    icon: "👑",
+    allowNone: true,
+    palette: ACCESSORY_COLOURS,
+    items: [
+      { id: "hairband", name: "Hairband" },
+      { id: "bow", name: "Bow" },
+      { id: "crown", name: "Crown" },
+      { id: "catEars", name: "Cat ears" },
+      { id: "flower", name: "Flower" },
+      { id: "sunHat", name: "Sun hat" },
+    ],
+  },
+  {
+    id: "glasses",
+    label: "Glasses",
+    icon: "👓",
+    allowNone: true,
+    palette: ACCESSORY_COLOURS,
+    items: [
+      { id: "round", name: "Round" },
+      { id: "square", name: "Square" },
+      { id: "sunnies", name: "Shades" },
+      { id: "heartSunnies", name: "Hearts" },
+    ],
+  },
+  {
+    id: "jewels",
+    label: "Jewels",
+    icon: "💎",
+    allowNone: true,
+    palette: ACCESSORY_COLOURS,
+    items: [
+      { id: "pendant", name: "Pendant" },
+      { id: "heartNecklace", name: "Heart" },
+      { id: "pearls", name: "Pearls" },
+      { id: "hoops", name: "Hoops" },
+      { id: "studsAndChain", name: "Studs" },
+    ],
+  },
+  {
     id: "eyes",
     label: "Eyes",
     icon: "👀",
@@ -139,6 +205,18 @@ export const CATEGORIES: CategoryDef[] = [
       { id: "happy", name: "Happy" },
       { id: "wink", name: "Wink" },
       { id: "sleepy", name: "Sleepy" },
+    ],
+  },
+  {
+    id: "nose",
+    label: "Nose",
+    icon: "👃",
+    allowNone: true,
+    items: [
+      { id: "button", name: "Button" },
+      { id: "curve", name: "Curvy" },
+      { id: "dots", name: "Dots" },
+      { id: "freckles", name: "Freckles" },
     ],
   },
   {
@@ -156,6 +234,21 @@ export const CATEGORIES: CategoryDef[] = [
     ],
   },
   {
+    id: "blush",
+    label: "Makeup",
+    icon: "💄",
+    allowNone: true,
+    palette: MAKEUP_COLOURS,
+    items: [
+      { id: "soft", name: "Soft" },
+      { id: "bold", name: "Bold" },
+      { id: "doll", name: "Dolly" },
+      { id: "hearts", name: "Hearts" },
+      { id: "stars", name: "Stars" },
+      { id: "sparkle", name: "Sparkle" },
+    ],
+  },
+  {
     id: "skin",
     label: "Skin",
     icon: "🎨",
@@ -170,7 +263,10 @@ export const DEFAULT_LOOK: AvatarLook = {
   hairColour: HAIR_COLOURS[3],
   eyesId: "sparkle",
   irisColour: IRIS_COLOURS[3],
+  noseId: "button",
   mouthId: "smile",
+  blushId: "soft",
+  blushColour: MAKEUP_COLOURS[0],
   topId: "tshirt",
   topColour: "#ff6fae",
   motifId: "heart",
@@ -178,4 +274,10 @@ export const DEFAULT_LOOK: AvatarLook = {
   bottomColour: "#3aa0ff",
   shoesId: "trainers",
   shoesColour: "#fffdfa",
+  headId: null,
+  headColour: ACCESSORY_COLOURS[0],
+  glassesId: null,
+  glassesColour: ACCESSORY_COLOURS[0],
+  jewelsId: null,
+  jewelsColour: ACCESSORY_COLOURS[0],
 };

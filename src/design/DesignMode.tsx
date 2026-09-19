@@ -191,6 +191,7 @@ export function DesignMode({
   onSave,
   onSelect,
   onDelete,
+  onNew,
   onBack,
 }: {
   look: AvatarLook;
@@ -200,6 +201,7 @@ export function DesignMode({
   onSave: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onNew: () => void;
   /** Absent on the very first run, when there's no room to go back to yet. */
   onBack: (() => void) | null;
 }) {
@@ -321,6 +323,16 @@ export function DesignMode({
 
         {showCharacters && (
           <div className="items">
+            <button
+              className="item"
+              onClick={() => {
+                onNew();
+                playPop();
+              }}
+            >
+              <span className="item-none">＋</span>
+              <span className="item-name">New one</span>
+            </button>
             {characters.length === 0 && <p className="hint">No saved characters yet — tap Save to keep this one.</p>}
             {characters.map((c) => (
               <div key={c.id} className={"item item-saved" + (c.id === editingId ? " is-active" : "")}>
@@ -368,7 +380,7 @@ export function DesignMode({
               playSparkle();
             }}
           >
-            Save &amp; play ▶
+            {editingId ? "Save & play ▶" : "Save new one ▶"}
           </button>
         </div>
       </div>

@@ -55,6 +55,20 @@ button {
   flex-direction: column;
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bottom);
+  /* Nothing in the game scrolls except the strips and sheet below, which opt back in. Leaving
+     the browser free to hunt for a scroll gesture meant the first tap after a drag was
+     swallowed while it made up its mind. */
+  touch-action: none;
+}
+
+.tabs,
+.items,
+.swatches {
+  touch-action: pan-x;
+}
+
+.sheet-scroll {
+  touch-action: pan-y;
 }
 
 /* ---------- top bar ---------- */
@@ -592,4 +606,157 @@ button {
   flex: 0 0 auto !important;
   padding-left: 16px;
   padding-right: 16px;
+}
+
+/* ---------- furniture catalogue sheet ---------- */
+
+/* An overlay rather than part of the drawer: the room keeps its full height behind it, so the
+   scene doesn't change aspect (and regain side bars) every time the menu opens. */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(10, 6, 24, 0.5);
+  display: flex;
+  align-items: flex-end;
+  animation: fade-in 0.18s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.sheet {
+  width: 100%;
+  max-height: 68dvh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, var(--drawer-2), var(--drawer));
+  border-top: 2px solid var(--line);
+  border-radius: 22px 22px 0 0;
+  padding-bottom: var(--safe-bottom);
+  animation: sheet-up 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(18%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.sheet-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 4px;
+  font-size: 1rem;
+}
+
+.sheet-close {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+}
+
+.sheet-hint {
+  flex: none;
+  margin: 0 16px 6px;
+  color: var(--ink-dim);
+}
+
+.sheet-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 12px 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-group {
+  margin: 12px 4px 8px;
+  font-size: 0.85rem;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  color: var(--yellow);
+}
+
+.sheet-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The computer screen "runs": bars pulse and a cursor blinks. */
+.screen-glow {
+  animation: screen-flicker 2.6s ease-in-out infinite;
+}
+
+@keyframes screen-flicker {
+  0%, 100% { opacity: 0.9; }
+  40% { opacity: 0.55; }
+  70% { opacity: 1; }
+}
+
+.screen-cursor {
+  animation: cursor-blink 1s steps(1, end) infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-glow,
+  .screen-cursor {
+    animation: none;
+  }
+}
+
+/* The burst flies outwards and fades, leaving the strings. */
+.balloon-burst {
+  animation: balloon-burst 0.55s ease-out forwards;
+}
+
+@keyframes balloon-burst {
+  0% {
+    transform: scale(0.25);
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .balloon-burst {
+    animation: none;
+    opacity: 0;
+  }
 }

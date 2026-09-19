@@ -8,14 +8,106 @@ import type { ReactElement } from "react";
 export type FurnitureRender = () => ReactElement;
 
 /**
- * Pieces that belong up the wall. Everything else is floor-standing and is stopped from being
- * dragged more than a little way up — enough to put a teddy on a bed, not enough to leave a rug
- * stuck to the ceiling.
+ * How a piece is allowed to be placed. The default (everything not listed) is floor-standing:
+ * its BASE must stay on the floor, while its top is free to reach up the wall — which is how a
+ * wardrobe stands against a wall without floating.
  */
-export const WALL_MOUNTED = new Set(["poster", "balloons"]);
+
+/** Hangs on the wall; never comes below the floor line. */
+export const WALL_MOUNTED = new Set(["poster", "shelves"]);
+
+/** Drifts about in the air, above the floor or the wall. */
+export const FLOATING = new Set(["balloons"]);
+
+/**
+ * Lies flat on the floor. Constrained by its TOP edge rather than its base, because a rug whose
+ * base is merely on the floor line still has the rest of itself spread up the wall.
+ */
+export const FLAT_ON_FLOOR = new Set(["playRug", "bedroomRug"]);
+
+/** Small enough to put on top of other furniture, so the base may leave the floor. */
+export const STACKABLE = new Set([
+  "teddy", "plushie", "fruitBowl", "blocks", "bedsideLamp", "computer", "deskLamp", "plantSmall",
+]);
 
 const WOOD = "#b5763f";
 const WOOD_DARK = "#8d5a2c";
+
+/**
+ * A side-on chair: back post with a rail, seat, and two legs. Drawn once in local coordinates
+ * with the seat facing +x and mirrored for the chair on the other side of the table, so the
+ * pair face each other. Legs end at local y=35, which places the base on the floor line.
+ */
+function chair(x: number, colour: string, facing: number): ReactElement {
+  return (
+    <g transform={"translate(" + x + " 197) scale(" + facing + " 1)"}>
+      <rect x={-6} y={-52} width={11} height={60} rx={5.5} fill={colour} />
+      {/* A cap centred on the post. An earlier version curved off to one side and read as a hook. */}
+      <rect x={-10} y={-57} width={19} height={10} rx={5} fill={shade(colour, 16)} />
+      <rect x={-6} y={0} width={39} height={10} rx={5} fill={shade(colour, 14)} />
+      <rect x={25} y={8} width={8} height={27} rx={4} fill={shade(colour, -28)} />
+      <rect x={-5} y={8} width={8} height={27} rx={4} fill={shade(colour, -28)} />
+    </g>
+  );
+}
+
+function shade(hex: string, amount: number): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  const r = clamp(((n >> 16) & 255) + amount);
+  const g = clamp(((n >> 8) & 255) + amount);
+  const b = clamp((n & 255) + amount);
+  return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
+}
+
+/**
+ * The moment after a balloon goes pop: a starburst of spikes and curled rubber flying outward,
+ * which animates away in half a second and leaves the bare strings behind. An earlier version
+ * just swapped in some static shreds, which read as leaves rather than a pop.
+ */
+export const POPPED_BALLOONS: FurnitureRender = () => (
+  <g>
+    <path d="M356,150 q6,22 -3,42 M374,146 q-5,24 3,46" stroke="#ffffff" strokeWidth={2} opacity={0.5} fill="none" />
+    {([
+      [356, 136, "#ff4d7e"],
+      [378, 128, "#3aa0ff"],
+    ] as Array<[number, number, string]>).map(([cx, cy, colour]) => (
+      <g key={cx} className="balloon-burst" style={{ transformOrigin: cx + "px " + cy + "px" }}>
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+          <path
+            key={angle}
+            transform={"translate(" + cx + " " + cy + ") rotate(" + angle + ")"}
+            d="M8,0 L26,-4 L26,4 Z"
+            fill={colour}
+          />
+        ))}
+        {[22, 112, 205, 300].map((angle, i) => (
+          <path
+            key={"s" + angle}
+            transform={"translate(" + cx + " " + cy + ") rotate(" + angle + ") translate(20 0)"}
+            d="M0,0 q7,-6 13,0 q-6,7 -13,0 z"
+            fill={i % 2 === 0 ? colour : "#ffffff"}
+            opacity={0.9}
+          />
+        ))}
+      </g>
+    ))}
+  </g>
+);
+
+/** The desk lamp is the one piece with a state of its own, so it isn't a plain render. */
+export function deskLamp(on: boolean): ReactElement {
+  return (
+    <g>
+      {on && <ellipse cx={300} cy={214} rx={54} ry={34} fill="#ffe89a" opacity={0.42} />}
+      <ellipse cx={300} cy={230} rx={18} ry={6} fill="#5b6180" />
+      <path d="M300,228 l-2,-34 l6,0 l-2,34 z" fill="#8b93b5" />
+      <path d="M298,196 q0,-18 18,-24" stroke="#8b93b5" strokeWidth={6} fill="none" strokeLinecap="round" />
+      <path d="M302,166 l24,-8 l10,22 l-26,8 z" fill={on ? "#ffd23f" : "#9aa2c0"} />
+      <circle cx={318} cy={182} r={5} fill={on ? "#fff6c9" : "#7d85a5"} />
+    </g>
+  );
+}
 
 export const FURNITURE: Record<string, FurnitureRender> = {
   // ---------------- play room ----------------
@@ -114,14 +206,8 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  chairs: () => (
-    <g>
-      <rect x={132} y={186} width={9} height={52} rx={4} fill="#2ed6b8" />
-      <rect x={122} y={200} width={28} height={9} rx={4} fill="#2ed6b8" />
-      <rect x={274} y={186} width={9} height={52} rx={4} fill="#ff9040" />
-      <rect x={266} y={200} width={28} height={9} rx={4} fill="#ff9040" />
-    </g>
-  ),
+  chairLeft: () => chair(124, "#2ed6b8", 1),
+  chairRight: () => chair(288, "#ff9040", -1),
 
   fruitBowl: () => (
     <g>
@@ -142,17 +228,103 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
+  // ---------------- study ----------------
+  desk: () => (
+    <g>
+      <rect x={128} y={190} width={150} height={12} rx={6} fill={WOOD} />
+      <rect x={134} y={202} width={10} height={30} rx={5} fill={WOOD_DARK} />
+      <rect x={262} y={202} width={10} height={30} rx={5} fill={WOOD_DARK} />
+      <rect x={196} y={202} width={76} height={30} rx={4} fill={shade(WOOD, 12)} />
+      <rect x={204} y={210} width={60} height={5} rx={2.5} fill={WOOD_DARK} />
+      <rect x={204} y={221} width={60} height={5} rx={2.5} fill={WOOD_DARK} />
+    </g>
+  ),
+
+  computer: () => (
+    <g>
+      <rect x={168} y={140} width={72} height={48} rx={5} fill="#3a3a52" />
+      <rect x={173} y={145} width={62} height={38} rx={3} fill="#1d1f38" />
+      {/* The screen "runs" — a cheap loop of bars and a blinking cursor reads as a computer. */}
+      <g className="screen-glow">
+        <rect x={177} y={150} width={30} height={4} rx={2} fill="#4fe0c0" />
+        <rect x={177} y={158} width={44} height={4} rx={2} fill="#7fb6ff" />
+        <rect x={177} y={166} width={22} height={4} rx={2} fill="#ffd23f" />
+        <rect x={177} y={174} width={36} height={4} rx={2} fill="#ff8fc0" />
+      </g>
+      <rect className="screen-cursor" x={215} y={173} width={7} height={6} fill="#4fe0c0" />
+      <rect x={196} y={188} width={16} height={8} fill="#3a3a52" />
+      <rect x={184} y={196} width={40} height={5} rx={2.5} fill="#2a2a40" />
+    </g>
+  ),
+
+  bookcase: () => (
+    <g>
+      <rect x={20} y={100} width={86} height={132} rx={6} fill={WOOD} />
+      <rect x={26} y={106} width={74} height={120} rx={3} fill={shade(WOOD, -30)} />
+      {[112, 148, 184].map((y) => (
+        <rect key={y} x={26} y={y} width={74} height={7} rx={3} fill={WOOD} />
+      ))}
+      {[
+        [30, 118, "#ff4d5e"], [37, 118, "#ffd23f"], [44, 118, "#3aa0ff"], [51, 118, "#5ed64a"],
+        [30, 154, "#c77dff"], [37, 154, "#2ed6b8"], [44, 154, "#ff9040"],
+        [30, 190, "#7fb6ff"], [37, 190, "#ff6fae"], [44, 190, "#ffd23f"], [51, 190, "#5ed64a"],
+      ].map(([x, y, c], i) => (
+        <rect key={i} x={x as number} y={y as number} width={6} height={30} rx={1.5} fill={c as string} />
+      ))}
+    </g>
+  ),
+
+  shelves: () => (
+    <g>
+      <rect x={288} y={84} width={94} height={8} rx={4} fill={WOOD} />
+      <rect x={288} y={126} width={94} height={8} rx={4} fill={WOOD} />
+      {[
+        [296, 60, "#ff6fae"], [304, 60, "#ffd23f"], [312, 60, "#3aa0ff"],
+        [300, 102, "#5ed64a"], [308, 102, "#c77dff"],
+      ].map(([x, y, c], i) => (
+        <rect key={i} x={x as number} y={y as number} width={7} height={24} rx={2} fill={c as string} />
+      ))}
+      <ellipse cx={352} cy={76} rx={14} ry={9} fill="#3fae5a" />
+      <path d="M345,84 l4,-8 h8 l4,8 z" fill="#d98452" />
+      <circle cx={344} cy={120} r={8} fill="#ff9040" />
+    </g>
+  ),
+
+  plantBig: () => (
+    <g>
+      <path d="M116,232 l7,-34 h30 l7,34 z" fill="#d98452" />
+      <path d="M116,198 h44 l-2,10 h-40 z" fill={shade("#d98452", -30)} />
+      <path
+        d="M138,198 q-30,-10 -28,-44 q28,4 28,44 M138,198 q30,-12 30,-46 q-30,6 -30,46 M138,198 q-4,-38 0,-54 q6,20 2,54"
+        fill="#3fae5a"
+      />
+    </g>
+  ),
+
+  plantSmall: () => (
+    <g>
+      <path d="M246,232 l4,-20 h18 l4,20 z" fill="#c77dff" />
+      <path
+        d="M259,212 q-16,-6 -15,-24 q15,3 15,24 M259,212 q16,-7 16,-24 q-16,4 -16,24"
+        fill="#5ed64a"
+      />
+    </g>
+  ),
+
   // ---------------- bedroom ----------------
+  /** Side-on single bed: tall headboard at the left, low footboard at the right. */
   bed: () => (
     <g>
-      <rect x={196} y={182} width={180} height={12} rx={6} fill={WOOD_DARK} />
-      <rect x={196} y={140} width={16} height={54} rx={6} fill={WOOD} />
-      <rect x={360} y={152} width={16} height={42} rx={6} fill={WOOD} />
-      <rect x={206} y={194} width={164} height={34} rx={8} fill="#ff8fc0" />
-      <rect x={206} y={190} width={62} height={22} rx={9} fill="#fffdfa" />
-      <path d="M268,196 h102" stroke="#ff5fa8" strokeWidth={5} strokeLinecap="round" />
-      <rect x={214} y={228} width={8} height={16} rx={4} fill={WOOD_DARK} />
-      <rect x={354} y={228} width={8} height={16} rx={4} fill={WOOD_DARK} />
+      <rect x={190} y={122} width={20} height={108} rx={9} fill={WOOD} />
+      <rect x={194} y={130} width={12} height={58} rx={6} fill={shade(WOOD, -22)} />
+      <rect x={366} y={170} width={18} height={60} rx={8} fill={WOOD} />
+      <rect x={200} y={196} width={172} height={18} rx={6} fill={WOOD_DARK} />
+      <rect x={202} y={176} width={168} height={24} rx={11} fill="#fffdfa" />
+      <path d="M252,172 h108 a11,11 0 0 1 11,11 v10 a8,8 0 0 1 -8,8 H252 z" fill="#ff8fc0" />
+      <rect x={250} y={172} width={122} height={9} rx={4.5} fill="#ffc2dc" />
+      <rect x={210} y={164} width={54} height={22} rx={11} fill="#fffdfa" transform="rotate(-4 237 175)" />
+      <rect x={204} y={214} width={10} height={18} rx={4} fill={WOOD_DARK} />
+      <rect x={358} y={214} width={10} height={18} rx={4} fill={WOOD_DARK} />
     </g>
   ),
 

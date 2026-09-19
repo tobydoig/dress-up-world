@@ -39,7 +39,9 @@ export const LEG = {
   right: { x1: 114, y1: 250, x2: 118, y2: 354 },
 };
 
-export const FOOT = { leftCx: 79, rightCx: 121, cy: 368 };
+// Lined up with where the legs actually end (LEG.left.x2 / LEG.right.x2). Any gap here makes
+// the shoes — boots especially — look splayed away from the legs.
+export const FOOT = { leftCx: 82, rightCx: 118, cy: 368 };
 
 export const EYE = { cy: 92, leftCx: 78, rightCx: 122 };
 export const MOUTH = { cx: 100, cy: 117 };

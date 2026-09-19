@@ -3,7 +3,7 @@ import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
 import { DEFAULT_LOOK, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
-import { AVATAR_HOME, loadSave, newId, persist, type GameSave } from "./lib/storage";
+import { AVATAR_HOME, loadSave, newId, persist, type AvatarPose, type GameSave } from "./lib/storage";
 import { isMuted, setMuted } from "./lib/sound";
 
 type Mode = "design" | "explore";
@@ -44,6 +44,19 @@ export function App() {
       };
     });
     setMode("explore");
+  }
+
+  /** Start designing a fresh character rather than editing the current one. */
+  function newCharacter() {
+    setEditingId(null);
+    setLook(DEFAULT_LOOK);
+  }
+
+  /** Switch who is in the room, without going through design mode. */
+  function switchCharacter(id: string) {
+    if (!save.characters.some((c) => c.id === id)) return;
+    setSave((prev) => ({ ...prev, activeId: id }));
+    setEditingId(id);
   }
 
   function selectCharacter(id: string) {
@@ -91,8 +104,8 @@ export function App() {
     }));
   }
 
-  function moveAvatar(x: number, y: number) {
-    updateRoom((room) => ({ ...room, avatarX: x, avatarY: y }));
+  function moveAvatar(x: number, y: number, pose?: AvatarPose) {
+    updateRoom((room) => ({ ...room, avatarX: x, avatarY: y, avatarPose: pose ?? room.avatarPose }));
   }
 
   /** Put everything back where it started, for when the room gets into a state. */
@@ -101,6 +114,7 @@ export function App() {
       items: room.items.map((i) => ({ ...i, dx: 0, dy: 0 })),
       avatarX: AVATAR_HOME.x,
       avatarY: AVATAR_HOME.y,
+      avatarPose: "stand",
     }));
   }
 
@@ -115,6 +129,7 @@ export function App() {
           onSave={saveAndPlay}
           onSelect={selectCharacter}
           onDelete={deleteCharacter}
+          onNew={newCharacter}
           onBack={save.characters.length > 0 ? () => setMode("explore") : null}
         />
       ) : (
@@ -127,6 +142,13 @@ export function App() {
           onMoveFurniture={moveFurniture}
           onMoveAvatar={moveAvatar}
           onTidyUp={tidyUp}
+          characters={save.characters}
+          activeId={save.activeId}
+          onSwitchCharacter={switchCharacter}
+          onNewCharacter={() => {
+            newCharacter();
+            setMode("design");
+          }}
           onDesign={() => {
             if (activeLook) setLook(activeLook);
             setEditingId(save.activeId);

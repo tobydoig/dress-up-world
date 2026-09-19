@@ -17,14 +17,23 @@ import type { AvatarLook } from "../data/wardrobe";
  * Each slot gets a `key` built from its own state, so swapping one garment remounts just that
  * group and replays the pop animation on it rather than on the whole character.
  */
+/**
+ * Standing, sitting on something, or lying down. Sitting bends the legs at the knee; lying is
+ * the standing figure turned on its side, which reads perfectly well at this cartoon scale and
+ * avoids a second set of artwork for every garment.
+ */
+export type Pose = "stand" | "sit" | "lie";
+
 export function AvatarLayers({
   look,
   uid = "main",
   animate = true,
+  pose = "stand",
 }: {
   look: AvatarLook;
   uid?: string;
   animate?: boolean;
+  pose?: Pose;
 }): ReactElement {
   const hair = HAIR_STYLES[look.hairId] ?? HAIR_STYLES.long;
   const eyes = EYE_STYLES[look.eyesId] ?? EYE_STYLES.round;
@@ -36,8 +45,10 @@ export function AvatarLayers({
 
   const pop = animate ? "av-pop" : undefined;
 
+  const seated = pose === "sit";
+
   return (
-    <g className={animate ? "av-breathe" : undefined}>
+    <g className={animate && !seated ? "av-breathe" : undefined}>
       {hair.back && (
         <g key={"hb-" + look.hairId + look.hairColour} className={pop}>
           {hair.back({ colour: look.hairColour })}
@@ -46,24 +57,7 @@ export function AvatarLayers({
 
       {/* Bare body underneath everything it wears. */}
       <g key={"body-" + look.skin}>
-        <line
-          x1={LEG.left.x1}
-          y1={LEG.left.y1}
-          x2={LEG.left.x2}
-          y2={LEG.left.y2}
-          stroke={look.skin}
-          strokeWidth={LEG.width}
-          strokeLinecap="round"
-        />
-        <line
-          x1={LEG.right.x1}
-          y1={LEG.right.y1}
-          x2={LEG.right.x2}
-          y2={LEG.right.y2}
-          stroke={look.skin}
-          strokeWidth={LEG.width}
-          strokeLinecap="round"
-        />
+        <Legs skin={look.skin} pose={pose} />
         <line
           x1={ARM.left.x1}
           y1={ARM.left.y1}
@@ -152,6 +146,59 @@ export function AvatarLayers({
           {JEWEL_STYLES[look.jewelsId]({ colour: look.jewelsColour })}
         </g>
       )}
+    </g>
+  );
+}
+
+/** Legs as one straight line when standing, thigh plus shin when sitting. */
+function Legs({ skin, pose }: { skin: string; pose: Pose }): ReactElement {
+  if (pose !== "sit") {
+    return (
+      <g>
+        {([LEG.left, LEG.right] as const).map((leg, i) => (
+          <line
+            key={i}
+            x1={leg.x1}
+            y1={leg.y1}
+            x2={leg.x2}
+            y2={leg.y2}
+            stroke={skin}
+            strokeWidth={LEG.width}
+            strokeLinecap="round"
+          />
+        ))}
+      </g>
+    );
+  }
+
+  return (
+    <g>
+      {([LEG.left, LEG.right] as const).map((leg, i) => {
+        const out = i === 0 ? -1 : 1;
+        const knee = { x: leg.x1 + out * 20, y: leg.y1 + 24 };
+        return (
+          <g key={i}>
+            <line
+              x1={leg.x1}
+              y1={leg.y1}
+              x2={knee.x}
+              y2={knee.y}
+              stroke={skin}
+              strokeWidth={LEG.width}
+              strokeLinecap="round"
+            />
+            <line
+              x1={knee.x}
+              y1={knee.y}
+              x2={knee.x + out * 4}
+              y2={knee.y + 66}
+              stroke={skin}
+              strokeWidth={LEG.width}
+              strokeLinecap="round"
+            />
+          </g>
+        );
+      })}
     </g>
   );
 }

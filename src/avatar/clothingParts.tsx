@@ -53,11 +53,14 @@ export const TOP_STYLES: Record<string, (p: TopProps) => ReactElement> = {
 
   tank: (p) => (
     <g>
-      <path d={TORSO.path} fill={p.colour} />
-      {/* Cut the straps in by overlaying skin at the shoulders. */}
-      <path d="M67,158 C67,146 82,143 88,150 L84,172 Q72,170 69,176 Z" fill={p.skin} />
-      <path d="M133,158 C133,146 118,143 112,150 L116,172 Q128,170 131,176 Z" fill={p.skin} />
-      {collar(p.skin)}
+      {/* Straps over the shoulders, then a scoop-necked body. Drawing the full torso and
+          painting skin back over the shoulders gave the character a second set of shoulders. */}
+      <rect x={76} y={150} width={11} height={34} rx={5.5} fill={p.colour} />
+      <rect x={113} y={150} width={11} height={34} rx={5.5} fill={p.colour} />
+      <path
+        d="M70,176 Q100,192 130,176 L128,244 C128,254 72,254 72,244 Z"
+        fill={p.colour}
+      />
       {p.motif}
     </g>
   ),
@@ -196,7 +199,7 @@ function pair(render: (key: string) => ReactElement): ReactElement {
         [FOOT.leftCx, -1],
         [FOOT.rightCx, 1],
       ] as Array<[number, number]>).map(([cx, dir]) => (
-        <g key={cx} transform={"translate(" + cx + " " + FOOT.cy + ") scale(" + dir + " 1)"}>
+        <g key={cx} transform={"translate(" + cx + " " + FOOT.cy + ") scale(" + dir + " 1) translate(-4 0)"}>
           {render("s" + cx)}
         </g>
       ))}
@@ -208,20 +211,22 @@ export const SHOE_STYLES: Record<string, (p: GarmentProps) => ReactElement> = {
   trainers: (p) =>
     pair((k) => (
       <g key={k}>
-        <path d="M-12,-16 L2,-16 Q19,-14 23,-3 L23,3 L-14,3 Q-16,-8 -12,-16 Z" fill={p.colour} />
-        <rect x={-16} y={1} width={40} height={10} rx={5} fill="#fffdfa" />
+        <path d="M-15,-17 L2,-17 Q20,-15 24,-3 L24,3 L-16,3 Q-18,-8 -15,-17 Z" fill={p.colour} />
+        <rect x={-18} y={1} width={44} height={10} rx={5} fill="#fffdfa" />
         <path d="M-5,-3 Q7,-9 18,-5" stroke="#fffdfa" strokeWidth={3.6} strokeLinecap="round" fill="none" />
-        <rect x={-13} y={-18} width={17} height={7} rx={3.5} fill={shade(p.colour, 38)} />
+        <rect x={-15} y={-19} width={22} height={8} rx={4} fill={shade(p.colour, 38)} />
       </g>
     )),
 
   boots: (p) =>
     pair((k) => (
       <g key={k}>
-        <rect x={-12} y={-48} width={26} height={42} rx={8} fill={p.colour} />
-        <path d="M-12,-13 L2,-13 Q18,-11 21,-2 L21,3 L-14,3 Q-15,-6 -12,-13 Z" fill={p.colour} />
-        <rect x={-15} y={1} width={37} height={10} rx={4.5} fill={shade(p.colour, -50)} />
-        <rect x={-14} y={-50} width={30} height={8} rx={4} fill={shade(p.colour, 42)} />
+        {/* The shaft has to be wider than the trouser leg it swallows (BOTTOM_W is 32),
+            otherwise the leg shows either side of the boot. */}
+        <rect x={-18} y={-48} width={37} height={44} rx={9} fill={p.colour} />
+        <path d="M-18,-14 L2,-14 Q20,-12 24,-2 L24,3 L-19,3 Q-20,-6 -18,-14 Z" fill={p.colour} />
+        <rect x={-20} y={1} width={45} height={10} rx={4.5} fill={shade(p.colour, -50)} />
+        <rect x={-20} y={-51} width={41} height={9} rx={4.5} fill={shade(p.colour, 42)} />
       </g>
     )),
 

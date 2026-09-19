@@ -97,3 +97,9 @@ export function playWhoosh(): void {
   tone({ from: 240, to: 640, duration: 0.2, type: "sine", gain: 0.1 });
   tone({ from: 480, to: 300, duration: 0.16, type: "triangle", gain: 0.07, delay: 0.05 });
 }
+
+/** A balloon going pop. */
+export function playBang(): void {
+  tone({ from: 900, to: 90, duration: 0.14, type: "square", gain: 0.16 });
+  tone({ from: 320, to: 60, duration: 0.2, type: "triangle", gain: 0.1, delay: 0.02 });
+}

@@ -1,5 +1,5 @@
 import { DEFAULT_LOOK, type AvatarLook } from "../data/wardrobe";
-import { ROOMS, ROOM_ORDER, type RoomId } from "../data/rooms";
+import { ALL_FURNITURE_IDS, ROOMS, ROOM_ORDER, type RoomId } from "../data/rooms";
 
 export interface SavedCharacter {
   id: string;
@@ -18,11 +18,14 @@ export interface PlacedFurniture {
   dy: number;
 }
 
+export type AvatarPose = "stand" | "sit" | "lie";
+
 export interface RoomState {
   items: PlacedFurniture[];
   /** Where the character is standing, in room coordinates (their feet). */
   avatarX: number;
   avatarY: number;
+  avatarPose: AvatarPose;
 }
 
 export interface GameSave {
@@ -40,24 +43,20 @@ export function newId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function validIds(room: RoomId): Set<string> {
-  return new Set(ROOMS[room].furniture.map((f) => f.id));
-}
-
 function starterRoom(room: RoomId): RoomState {
   return {
     items: ROOMS[room].startWith.map((id) => ({ id, dx: 0, dy: 0 })),
     avatarX: AVATAR_HOME.x,
     avatarY: AVATAR_HOME.y,
+    avatarPose: "stand",
   };
 }
 
+/** Built from ROOM_ORDER so adding a room can't silently miss one. */
 function starterRooms(): Record<RoomId, RoomState> {
-  return {
-    playroom: starterRoom("playroom"),
-    kitchen: starterRoom("kitchen"),
-    bedroom: starterRoom("bedroom"),
-  };
+  const rooms = {} as Record<RoomId, RoomState>;
+  for (const id of ROOM_ORDER) rooms[id] = starterRoom(id);
+  return rooms;
 }
 
 export function emptySave(): GameSave {
@@ -70,7 +69,8 @@ function num(value: unknown, fallback: number): number {
 
 /** Accepts both the original shape (a plain list of furniture ids) and the current one. */
 function normaliseRoom(raw: unknown, room: RoomId): RoomState {
-  const allowed = validIds(room);
+  // Any piece may live in any room, so ids are checked against the whole catalogue.
+  const allowed = ALL_FURNITURE_IDS;
 
   if (Array.isArray(raw)) {
     return {
@@ -79,6 +79,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
         .map((id) => ({ id, dx: 0, dy: 0 })),
       avatarX: AVATAR_HOME.x,
       avatarY: AVATAR_HOME.y,
+      avatarPose: "stand",
     };
   }
 
@@ -89,10 +90,13 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
           .filter((i): i is PlacedFurniture => !!i && typeof i.id === "string" && allowed.has(i.id))
           .map((i) => ({ id: i.id, dx: num(i.dx, 0), dy: num(i.dy, 0) }))
       : starterRoom(room).items;
+    const pose: AvatarPose =
+      r.avatarPose === "sit" || r.avatarPose === "lie" ? r.avatarPose : "stand";
     return {
       items,
       avatarX: num(r.avatarX, AVATAR_HOME.x),
       avatarY: num(r.avatarY, AVATAR_HOME.y),
+      avatarPose: pose,
     };
   }
 

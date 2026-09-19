@@ -1,0 +1,378 @@
+/* Phone-first. The whole app is exactly one viewport tall and never scrolls the page —
+   only the tab strip and item strip scroll, horizontally. */
+
+:root {
+  --bg-deep: #2b1b53;
+  --bg-mid: #3b2470;
+  --drawer: #241546;
+  --drawer-2: #2e1a59;
+  --ink: #fff4fb;
+  --ink-dim: #c8b6e8;
+  --pink: #ff6fae;
+  --yellow: #ffd23f;
+  --mint: #2ed6b8;
+  --line: rgba(255, 255, 255, 0.14);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Nunito", "Baloo 2", "Segoe UI Rounded", "SF Pro Rounded", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg-deep);
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.screen {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+/* ---------- top bar ---------- */
+
+.topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px 4px;
+}
+
+.logo {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  color: var(--yellow);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.logo span {
+  color: var(--pink);
+}
+
+.chip-btn {
+  flex: none;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  background: linear-gradient(180deg, #ff8cc2, #ff5ba1);
+  box-shadow: 0 3px 0 #c93b78, 0 6px 14px rgba(255, 91, 161, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.chip-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #c93b78, 0 3px 8px rgba(255, 91, 161, 0.3);
+}
+
+/* ---------- avatar stage ---------- */
+
+.stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 16px 0;
+  background:
+    radial-gradient(120% 70% at 50% 8%, rgba(255, 210, 63, 0.18), transparent 60%),
+    linear-gradient(180deg, var(--bg-mid), var(--bg-deep));
+}
+
+.stage-glow {
+  position: absolute;
+  inset: 8% 6% 12%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, rgba(255, 111, 174, 0.28), transparent 62%);
+  filter: blur(14px);
+  pointer-events: none;
+}
+
+.stage-shadow {
+  position: absolute;
+  bottom: 4%;
+  width: 46%;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.32);
+  filter: blur(7px);
+  pointer-events: none;
+}
+
+.avatar-svg {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  max-height: 100%;
+  overflow: visible;
+}
+
+/* ---------- drawer ---------- */
+
+.drawer {
+  flex: none;
+  background: linear-gradient(180deg, var(--drawer-2), var(--drawer));
+  border-top: 2px solid var(--line);
+  border-radius: 22px 22px 0 0;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  padding: 10px 0 12px;
+}
+
+.tabs,
+.items,
+.swatches {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 12px;
+}
+
+.tabs::-webkit-scrollbar,
+.items::-webkit-scrollbar,
+.swatches::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 62px;
+  padding: 7px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.tab.is-active {
+  background: linear-gradient(180deg, var(--pink), #e04b8c);
+  box-shadow: 0 3px 0 #a93269;
+}
+
+.tab:active {
+  transform: scale(0.95);
+}
+
+.tab-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.tab-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--ink-dim);
+}
+
+.tab.is-active .tab-label {
+  color: #fff;
+}
+
+.hint {
+  margin: 8px 14px 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--yellow);
+}
+
+.items {
+  margin-top: 10px;
+  align-items: stretch;
+}
+
+.item {
+  flex: none;
+  width: 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px 7px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 2.5px solid transparent;
+  transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.item.is-active {
+  border-color: var(--yellow);
+  background: rgba(255, 210, 63, 0.16);
+}
+
+.item:active {
+  transform: scale(0.94);
+}
+
+.item-art {
+  display: block;
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #4b2f86, #38215f);
+  overflow: hidden;
+}
+
+.item-none {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+  font-size: 1.5rem;
+  background: linear-gradient(180deg, #4b2f86, #38215f);
+}
+
+.item-name {
+  font-size: 0.66rem;
+  font-weight: 800;
+  color: var(--ink-dim);
+  text-align: center;
+  line-height: 1.15;
+}
+
+.item.is-active .item-name {
+  color: var(--yellow);
+}
+
+.swatches {
+  margin-top: 10px;
+  /* Always reserve the row even for categories with no palette, so the drawer keeps a constant
+     height and the character doesn't change size as you flick between tabs. */
+  min-height: 40px;
+}
+
+.swatch {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.18);
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.swatch.is-active {
+  border-color: var(--yellow);
+  transform: scale(1.12);
+}
+
+.swatch:active {
+  transform: scale(0.92);
+}
+
+/* ---------- mute ---------- */
+
+.mute-btn {
+  position: fixed;
+  top: calc(var(--safe-top) + 52px);
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.05rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1.5px solid var(--line);
+  display: grid;
+  place-items: center;
+}
+
+/* ---------- avatar animation ---------- */
+
+.av-breathe {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scaleY(1) translateY(0);
+  }
+  50% {
+    transform: scaleY(1.014) translateY(-2px);
+  }
+}
+
+.av-blink {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: blink 5.4s infinite;
+}
+
+@keyframes blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  95.5%,
+  97% {
+    transform: scaleY(0.08);
+  }
+}
+
+.av-pop {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: pop 0.36s cubic-bezier(0.34, 1.56, 0.5, 1) both;
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-breathe,
+  .av-blink,
+  .av-pop {
+    animation: none;
+  }
+}

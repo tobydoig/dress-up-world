@@ -73,13 +73,16 @@ button {
 
 /* ---------- top bar ---------- */
 
+/* Four things share this row on a 375px phone — room name, version, two chips and the dress-up
+   button — and they add up to within a pixel of the width. The padding and gaps are tight on
+   purpose; loosening them is what puts "Play room" into an ellipsis. */
 .topbar {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 14px 4px;
+  gap: 6px;
+  padding: 8px 10px 4px;
 }
 
 .logo {
@@ -88,7 +91,7 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 1.15rem;
+  font-size: 1.08rem;
   font-weight: 900;
   letter-spacing: 0.3px;
   color: var(--yellow);
@@ -121,6 +124,24 @@ button {
 .chip-btn:active {
   transform: translateY(3px);
   box-shadow: 0 0 0 #c93b78, 0 3px 8px rgba(255, 91, 161, 0.3);
+}
+
+/* Takes the space left between the room name and the buttons and centres itself in it.
+   Absolutely centring it on the bar looked right on a desktop and sat squarely on top of the
+   buttons on a 375px phone, where the middle of the bar is inside them. Untouchable, so it can
+   never swallow a tap meant for one. */
+.version {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--ink-dim);
+  opacity: 0.6;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* ---------- avatar stage ---------- */
@@ -717,7 +738,7 @@ button {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 /* The computer screen "runs": bars pulse and a cursor blinks. */

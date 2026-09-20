@@ -1161,6 +1161,7 @@ export function ExploreMode({
         <h1 className="logo">
           {room.icon} {room.name}
         </h1>
+        <span className="version">v{__APP_VERSION__}</span>
         <div className="topbar-actions">
           <button
             className="chip-btn chip-ghost chip-icon"

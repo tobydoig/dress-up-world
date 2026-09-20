@@ -84,7 +84,11 @@ button {
 
 .logo {
   margin: 0;
-  font-size: 1.25rem;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 1.15rem;
   font-weight: 900;
   letter-spacing: 0.3px;
   color: var(--yellow);
@@ -97,13 +101,21 @@ button {
 
 .chip-btn {
   flex: none;
-  padding: 9px 14px;
+  padding: 9px 12px;
   border-radius: 999px;
-  font-size: 0.85rem;
+  /* Four things share the top bar on a 375px phone, and the room name has to survive it. */
+  font-size: 0.82rem;
   font-weight: 800;
   background: linear-gradient(180deg, #ff8cc2, #ff5ba1);
   box-shadow: 0 3px 0 #c93b78, 0 6px 14px rgba(255, 91, 161, 0.35);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* Just the emoji, for the controls whose meaning the picture already carries. */
+.chip-icon {
+  padding: 9px 11px;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .chip-btn:active {
@@ -758,5 +770,453 @@ button {
   .balloon-burst {
     animation: none;
     opacity: 0;
+  }
+}
+
+/* ---------- things you can carry ---------- */
+
+.thing-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* The basket follows the character from room to room, so it lives on the scene rather than in
+   the drawer — and it only appears once there is something in it. */
+.basket {
+  position: absolute;
+  left: 8px;
+  bottom: 22px;
+  max-width: calc(100% - 132px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 15px;
+  background: rgba(20, 12, 44, 0.55);
+  border: 1.5px solid var(--line);
+  backdrop-filter: blur(3px);
+}
+
+.basket-icon {
+  flex: none;
+  font-size: 1.1rem;
+}
+
+.basket-items {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.basket-items::-webkit-scrollbar,
+.tray-row::-webkit-scrollbar {
+  display: none;
+}
+
+.basket-item {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 3px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid transparent;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.basket-item:active {
+  transform: scale(0.9);
+}
+
+.basket-item.is-in-pot {
+  border-color: var(--yellow);
+  background: rgba(255, 210, 63, 0.22);
+}
+
+/* ---------- the bin, which only exists mid-drag ---------- */
+
+/* pointer-events are off: the drop is worked out by hit-testing this box against the pointer,
+   and letting it take events would break the drag the moment the finger crossed it. */
+.bin {
+  position: absolute;
+  right: 10px;
+  bottom: 18px;
+  width: 106px;
+  padding: 7px 6px;
+  border-radius: 16px;
+  background: rgba(20, 12, 44, 0.62);
+  border: 2px dashed rgba(255, 255, 255, 0.4);
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  pointer-events: none;
+  transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+  animation: fade-in 0.15s ease-out both;
+}
+
+.bin.is-over {
+  background: rgba(255, 92, 122, 0.8);
+  border-color: #fffdfa;
+  border-style: solid;
+  transform: scale(1.09);
+}
+
+.bin-icon {
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+.bin-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+.bin.is-over .bin-label {
+  color: #fff;
+}
+
+/* ---------- "Yum!" ---------- */
+
+.reaction {
+  position: absolute;
+  left: 50%;
+  top: 16%;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(20, 12, 44, 0.82);
+  border: 2px solid var(--yellow);
+  color: var(--yellow);
+  font-size: 0.95rem;
+  font-weight: 900;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: reaction-pop 0.32s cubic-bezier(0.34, 1.56, 0.5, 1) both;
+}
+
+@keyframes reaction-pop {
+  from {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ---------- the tray: a cupboard's insides, a stall, or the pot ---------- */
+
+/* An overlay on the scene rather than part of the column, for the same reason the furniture
+   sheet is one: taking height out of the stage makes the room height-limited instead of
+   width-limited, and it gains side bars every time a cupboard is opened. */
+.tray {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 12;
+  max-height: 72%;
+  overflow-y: auto;
+  touch-action: pan-y;
+  background: linear-gradient(180deg, var(--drawer-2), var(--drawer));
+  border-top: 2px solid var(--line);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+  padding: 8px 0 6px;
+  animation: sheet-up 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* What she is carrying travels with the tray, so both halves of a move are on screen at once. */
+.tray-basket {
+  margin-top: 2px;
+  padding-top: 7px;
+  border-top: 1.5px solid var(--line);
+}
+
+.tray-label {
+  display: block;
+  padding: 0 14px 5px;
+  font-size: 0.7rem;
+  font-weight: 900;
+  color: var(--yellow);
+}
+
+.tray-empty {
+  padding: 18px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 14px 6px;
+  font-size: 0.92rem;
+}
+
+.tray-hint {
+  margin: 0 14px 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.tray-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.tray-item {
+  flex: none;
+  width: 66px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid transparent;
+  transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.tray-item.is-in-pot {
+  border-color: var(--yellow);
+  background: rgba(255, 210, 63, 0.2);
+}
+
+.tray-item:active {
+  transform: scale(0.93);
+}
+
+.tray-item:disabled {
+  opacity: 0.4;
+}
+
+.tray-item .thing-svg {
+  width: 42px;
+  height: 42px;
+}
+
+.tray-name {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--ink-dim);
+  text-align: center;
+  line-height: 1.1;
+}
+
+.tray-slot {
+  flex: none;
+  width: 66px;
+  height: 64px;
+  border-radius: 14px;
+  border: 2px dashed var(--line);
+}
+
+.tray-cook {
+  flex: none;
+  padding: 15px 16px;
+  border-radius: 14px;
+  font-size: 0.9rem;
+  font-weight: 900;
+  background: linear-gradient(180deg, #58e2a8, #2ec98c);
+  color: #0d3a28;
+  box-shadow: 0 4px 0 #1f9d6c;
+}
+
+.tray-cook:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.tray-cook:not(:disabled):active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+/* ---------- the drawing pad ---------- */
+
+.pad-sheet {
+  max-height: 94dvh;
+}
+
+/* The pad keeps exactly the viewBox's shape, so a finger position maps onto pad coordinates
+   with a plain scale and the drawing lands under the fingertip. */
+.pad {
+  width: calc(100% - 24px);
+  margin: 0 12px;
+  aspect-ratio: 4 / 3;
+  border-radius: 14px;
+  background: #fffdfa;
+  box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.14);
+  touch-action: none;
+  display: block;
+}
+
+.pad-tools {
+  padding: 2px 0 10px;
+}
+
+.pad-swatches {
+  min-height: 0;
+  margin-top: 10px;
+}
+
+.pad-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+
+.pad-widths {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.pad-width {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid transparent;
+  display: grid;
+  place-items: center;
+}
+
+.pad-width.is-active {
+  border-color: var(--yellow);
+}
+
+.pad-width span {
+  display: block;
+  border-radius: 50%;
+}
+
+.pad-clear,
+.pad-done {
+  flex: 1 1 0;
+  padding: 12px 8px;
+}
+
+/* ---------- steam ---------- */
+
+.steam-wisp {
+  animation: steam 2.4s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+@keyframes steam {
+  0%, 100% {
+    opacity: 0.35;
+    transform: translateY(0) scaleY(0.9);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(-3px) scaleY(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray,
+  .bin,
+  .reaction,
+  .steam-wisp {
+    animation: none;
+  }
+}
+
+/* ---------- carrying a thing from the basket into a cupboard ---------- */
+
+/* Follows the fingertip. Fixed rather than absolute so it isn't clipped by the stage, and
+   pointer-events off so it never becomes the thing under the finger. */
+.held-thing {
+  position: fixed;
+  z-index: 40;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(20, 12, 44, 0.75);
+  border: 2px solid var(--yellow);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  animation: held-lift 0.14s ease-out both;
+}
+
+@keyframes held-lift {
+  from {
+    transform: scale(0.7);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.basket-item.is-held {
+  opacity: 0.35;
+}
+
+/* The mouth of an open cupboard, lit up while something is being carried. */
+.drop-zone {
+  fill: none;
+  stroke: var(--yellow);
+  stroke-width: 3;
+  stroke-dasharray: 9 7;
+  opacity: 0.85;
+  animation: fade-in 0.15s ease-out both;
+}
+
+.drop-zone.is-over {
+  fill: rgba(255, 210, 63, 0.28);
+  stroke: #fffdfa;
+  stroke-dasharray: none;
+  stroke-width: 4;
+}
+
+/* ---------- chewing ---------- */
+
+.av-chew {
+  transform-box: fill-box;
+  transform-origin: 50% 15%;
+  animation: chew 0.3s ease-in-out infinite;
+}
+
+@keyframes chew {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .held-thing,
+  .drop-zone {
+    animation: none;
+  }
+
+  .av-chew {
+    animation: chew 0.9s ease-in-out infinite;
   }
 }

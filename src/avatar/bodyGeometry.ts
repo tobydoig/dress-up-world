@@ -50,6 +50,48 @@ export const BLUSH = { cy: 109, leftCx: 62, rightCx: 138, rx: 13, ry: 7.5 };
 /** Chest area where a t-shirt motif/logo sits. */
 export const MOTIF = { cx: 100, cy: 196 };
 
+/**
+ * Standing, sitting on something, or lying down. Lying is the standing figure turned on its
+ * side, so only sitting actually changes the skeleton.
+ */
+export type Pose = "stand" | "sit" | "lie";
+
+export interface Segment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/** How far the knee swings out and drops when sitting, and where the shin goes from there. */
+const SIT = { kneeOut: 20, kneeDrop: 24, shinOut: 4, shinDrop: 66 };
+
+/**
+ * A leg as the segments it is actually made of: one straight line standing, a thigh and a shin
+ * when sitting. Trousers, shorts and shoes are all built from these same segments rather than
+ * from LEG directly — otherwise a seated character's knees bend while her jeans carry straight
+ * on down through the chair and her shoes stay behind on the floor.
+ */
+export function legSegments(side: "left" | "right", pose: Pose): Segment[] {
+  const leg = side === "left" ? LEG.left : LEG.right;
+  if (pose !== "sit") return [leg];
+  const out = side === "left" ? -1 : 1;
+  const knee = { x: leg.x1 + out * SIT.kneeOut, y: leg.y1 + SIT.kneeDrop };
+  return [
+    { x1: leg.x1, y1: leg.y1, x2: knee.x, y2: knee.y },
+    { x1: knee.x, y1: knee.y, x2: knee.x + out * SIT.shinOut, y2: knee.y + SIT.shinDrop },
+  ];
+}
+
+/** Where the feet end up, which moves with the knees. */
+export function footFor(pose: Pose): { leftCx: number; rightCx: number; cy: number } {
+  if (pose !== "sit") return FOOT;
+  const left = legSegments("left", "sit")[1];
+  const right = legSegments("right", "sit")[1];
+  // The same drop below the end of the leg that the standing figure uses.
+  return { leftCx: left.x2, rightCx: right.x2, cy: left.y2 + (FOOT.cy - LEG.left.y2) };
+}
+
 /** Point some fraction along a limb line, for part-length sleeves and shorts. */
 export function along(
   line: { x1: number; y1: number; x2: number; y2: number },

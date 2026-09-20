@@ -67,6 +67,8 @@ function applyColour(look: AvatarLook, cat: CategoryId, hex: string): AvatarLook
   switch (cat) {
     case "top":
       return { ...look, topColour: hex };
+    case "motif":
+      return { ...look, motifColour: hex };
     case "bottom":
       return { ...look, bottomColour: hex };
     case "shoes":
@@ -123,6 +125,8 @@ function currentColour(look: AvatarLook, cat: CategoryId): string | null {
   switch (cat) {
     case "top":
       return look.topColour;
+    case "motif":
+      return look.motifColour;
     case "bottom":
       return look.bottomColour;
     case "shoes":
@@ -170,6 +174,8 @@ function randomLook(): AvatarLook {
     topId: pick(byId("top")).id,
     topColour,
     motifId: maybe(0.7, pick(byId("motif")).id),
+    // A picture the same colour as the top it sits on would be invisible.
+    motifColour: pick(FABRIC_COLOURS.filter((c) => c !== topColour)),
     bottomId: pick(byId("bottom")).id,
     bottomColour,
     shoesId: pick(byId("shoes")).id,

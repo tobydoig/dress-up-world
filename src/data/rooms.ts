@@ -1,4 +1,4 @@
-export type RoomId = "playroom" | "kitchen" | "bedroom" | "study";
+export type RoomId = "playroom" | "kitchen" | "bedroom" | "study" | "market";
 
 export interface RoomDef {
   id: RoomId;
@@ -10,10 +10,15 @@ export interface RoomDef {
   floorBoards: string;
   /** Pieces that start placed the first time the room is opened. */
   startWith: string[];
+  /**
+   * Outdoors: the "wall" is sky, so it gets clouds and a sun rather than a window and a picture
+   * rail, and the floor is paved rather than boarded.
+   */
+  outdoor?: boolean;
 }
 
 /** Left-to-right order — the arrows walk along this list and stop at each end. */
-export const ROOM_ORDER: RoomId[] = ["playroom", "kitchen", "bedroom", "study"];
+export const ROOM_ORDER: RoomId[] = ["playroom", "kitchen", "bedroom", "study", "market"];
 
 export const ROOMS: Record<RoomId, RoomDef> = {
   playroom: {
@@ -24,7 +29,7 @@ export const ROOMS: Record<RoomId, RoomDef> = {
     wallTrim: "#ffb3d1",
     floor: "#f0b97e",
     floorBoards: "#d99a5e",
-    startWith: ["playRug", "toyBox", "teddy"],
+    startWith: ["playRug", "toyBox", "teddy", "pictureFrame", "floorLamp"],
   },
 
   kitchen: {
@@ -35,7 +40,9 @@ export const ROOMS: Record<RoomId, RoomDef> = {
     wallTrim: "#a8dcc6",
     floor: "#e0e4ee",
     floorBoards: "#c3c9d8",
-    startWith: ["counter", "fridge", "diningTable", "chairLeft", "chairRight"],
+    // One chair, not two: the cooker needs the floor the second one was standing on, and a
+    // piece you can't tap because something else is parked on top of it may as well not exist.
+    startWith: ["counter", "cooker", "fridge", "cupboard", "diningTable", "chairLeft"],
   },
 
   bedroom: {
@@ -58,6 +65,18 @@ export const ROOMS: Record<RoomId, RoomDef> = {
     floor: "#9c7b5c",
     floorBoards: "#7d6047",
     startWith: ["desk", "computer", "bookcase", "shelves", "plantBig", "deskLamp"],
+  },
+
+  market: {
+    id: "market",
+    name: "Market",
+    icon: "🧺",
+    wall: "#bfe6ff",
+    wallTrim: "#8fd0f5",
+    floor: "#cdbfae",
+    floorBoards: "#ab9b88",
+    startWith: ["fruitStall", "vegStall", "bakeryStall", "dairyStall"],
+    outdoor: true,
   },
 };
 
@@ -83,6 +102,7 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
       { id: "teddy", name: "Teddy" },
       { id: "easel", name: "Easel" },
       { id: "balloons", name: "Balloons" },
+      { id: "pictureFrame", name: "Drawing" },
     ],
   },
   {
@@ -90,7 +110,9 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
     icon: "🍳",
     items: [
       { id: "counter", name: "Counter" },
+      { id: "cooker", name: "Cooker" },
       { id: "fridge", name: "Fridge" },
+      { id: "cupboard", name: "Cupboard" },
       { id: "diningTable", name: "Table" },
       { id: "chairLeft", name: "Chair" },
       { id: "chairRight", name: "Chair 2" },
@@ -105,6 +127,7 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
       { id: "desk", name: "Desk" },
       { id: "computer", name: "Computer" },
       { id: "deskLamp", name: "Desk lamp" },
+      { id: "floorLamp", name: "Tall lamp" },
       { id: "bookcase", name: "Bookcase" },
       { id: "shelves", name: "Shelves" },
       { id: "plantBig", name: "Big plant" },
@@ -118,9 +141,20 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
       { id: "bedroomRug", name: "Oval rug" },
       { id: "bed", name: "Bed" },
       { id: "wardrobe", name: "Wardrobe" },
+      { id: "drawers", name: "Drawers" },
       { id: "bedsideLamp", name: "Lamp" },
       { id: "poster", name: "Poster" },
       { id: "plushie", name: "Plushie" },
+    ],
+  },
+  {
+    label: "Market",
+    icon: "🧺",
+    items: [
+      { id: "fruitStall", name: "Fruit stall" },
+      { id: "vegStall", name: "Veg stall" },
+      { id: "bakeryStall", name: "Bakery" },
+      { id: "dairyStall", name: "Dairy" },
     ],
   },
 ];

@@ -1,5 +1,17 @@
 import type { ReactElement } from "react";
-import { ARM, EAR, HEAD, LEG, NECK, TORSO, VIEWBOX, shade } from "./bodyGeometry";
+import {
+  ARM,
+  EAR,
+  HEAD,
+  LEG,
+  MOUTH,
+  NECK,
+  TORSO,
+  VIEWBOX,
+  legSegments,
+  shade,
+  type Pose,
+} from "./bodyGeometry";
 import { BLUSH_STYLES, EYE_STYLES, MOUTH_STYLES, NOSE_STYLES } from "./faceParts";
 import { HAIR_STYLES } from "./hairParts";
 import { BOTTOM_STYLES, COVERS_LEGS, MOTIF_STYLES, SHOE_STYLES, TOP_STYLES } from "./clothingParts";
@@ -22,18 +34,21 @@ import type { AvatarLook } from "../data/wardrobe";
  * the standing figure turned on its side, which reads perfectly well at this cartoon scale and
  * avoids a second set of artwork for every garment.
  */
-export type Pose = "stand" | "sit" | "lie";
+export type { Pose };
 
 export function AvatarLayers({
   look,
   uid = "main",
   animate = true,
   pose = "stand",
+  chewing = false,
 }: {
   look: AvatarLook;
   uid?: string;
   animate?: boolean;
   pose?: Pose;
+  /** Mid-mouthful: the mouth works away instead of holding its usual expression. */
+  chewing?: boolean;
 }): ReactElement {
   const hair = HAIR_STYLES[look.hairId] ?? HAIR_STYLES.long;
   const eyes = EYE_STYLES[look.eyesId] ?? EYE_STYLES.round;
@@ -41,7 +56,10 @@ export function AvatarLayers({
 
   const topCoversLegs = look.topId !== null && COVERS_LEGS.has(look.topId);
   // Whether the motif actually shows is up to each top — some have their own decoration.
-  const motif = look.motifId && MOTIF_STYLES[look.motifId] ? MOTIF_STYLES[look.motifId]() : null;
+  const motif =
+    look.motifId && MOTIF_STYLES[look.motifId]
+      ? MOTIF_STYLES[look.motifId]({ colour: look.motifColour })
+      : null;
 
   const pop = animate ? "av-pop" : undefined;
 
@@ -82,19 +100,19 @@ export function AvatarLayers({
 
       {!topCoversLegs && look.bottomId && BOTTOM_STYLES[look.bottomId] && (
         <g key={"bot-" + look.bottomId + look.bottomColour} className={pop}>
-          {BOTTOM_STYLES[look.bottomId]({ colour: look.bottomColour })}
+          {BOTTOM_STYLES[look.bottomId]({ colour: look.bottomColour, pose })}
         </g>
       )}
 
       {look.topId && TOP_STYLES[look.topId] && (
-        <g key={"top-" + look.topId + look.topColour + look.motifId} className={pop}>
+        <g key={"top-" + look.topId + look.topColour + look.motifId + look.motifColour} className={pop}>
           {TOP_STYLES[look.topId]({ colour: look.topColour, skin: look.skin, motif, uid })}
         </g>
       )}
 
       {look.shoesId && SHOE_STYLES[look.shoesId] && (
         <g key={"shoe-" + look.shoesId + look.shoesColour} className={pop}>
-          {SHOE_STYLES[look.shoesId]({ colour: look.shoesColour })}
+          {SHOE_STYLES[look.shoesId]({ colour: look.shoesColour, pose })}
         </g>
       )}
 
@@ -121,9 +139,16 @@ export function AvatarLayers({
         </g>
       )}
 
-      <g key={"mouth-" + look.mouthId} className={pop}>
-        {mouth()}
-      </g>
+      {chewing ? (
+        <g className="av-chew">
+          <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 2} rx={13} ry={9.5} fill="#8a3a52" />
+          <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 5.5} rx={7.5} ry={4} fill="#ff8fa8" />
+        </g>
+      ) : (
+        <g key={"mouth-" + look.mouthId} className={pop}>
+          {mouth()}
+        </g>
+      )}
 
       <g key={"hf-" + look.hairId + look.hairColour} className={pop}>
         {hair.front({ colour: look.hairColour })}
@@ -150,55 +175,27 @@ export function AvatarLayers({
   );
 }
 
-/** Legs as one straight line when standing, thigh plus shin when sitting. */
+/**
+ * One straight line when standing, thigh plus shin when sitting — built from the same
+ * segments the trousers and shoes use, so the three can never disagree about where a knee is.
+ */
 function Legs({ skin, pose }: { skin: string; pose: Pose }): ReactElement {
-  if (pose !== "sit") {
-    return (
-      <g>
-        {([LEG.left, LEG.right] as const).map((leg, i) => (
+  return (
+    <g>
+      {(["left", "right"] as const).map((side) =>
+        legSegments(side, pose).map((segment, i) => (
           <line
-            key={i}
-            x1={leg.x1}
-            y1={leg.y1}
-            x2={leg.x2}
-            y2={leg.y2}
+            key={side + i}
+            x1={segment.x1}
+            y1={segment.y1}
+            x2={segment.x2}
+            y2={segment.y2}
             stroke={skin}
             strokeWidth={LEG.width}
             strokeLinecap="round"
           />
-        ))}
-      </g>
-    );
-  }
-
-  return (
-    <g>
-      {([LEG.left, LEG.right] as const).map((leg, i) => {
-        const out = i === 0 ? -1 : 1;
-        const knee = { x: leg.x1 + out * 20, y: leg.y1 + 24 };
-        return (
-          <g key={i}>
-            <line
-              x1={leg.x1}
-              y1={leg.y1}
-              x2={knee.x}
-              y2={knee.y}
-              stroke={skin}
-              strokeWidth={LEG.width}
-              strokeLinecap="round"
-            />
-            <line
-              x1={knee.x}
-              y1={knee.y}
-              x2={knee.x + out * 4}
-              y2={knee.y + 66}
-              stroke={skin}
-              strokeWidth={LEG.width}
-              strokeLinecap="round"
-            />
-          </g>
-        );
-      })}
+        ))
+      )}
     </g>
   );
 }

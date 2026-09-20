@@ -1,0 +1,58 @@
+# Builds the game and publishes it to GitHub Pages on every push to main.
+#
+# The site is entirely static — three files, no server, no network calls — so "deploying" is
+# just handing that folder to Pages. Nothing built is ever committed: the artifact is produced
+# here and uploaded directly, so the repo can't drift out of step with what is live.
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  # So a deploy can be re-run from the Actions tab without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # `npm run build` typechecks before it bundles, so a type error fails the deploy here
+      # rather than shipping.
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+        with:
+          # Turns Pages on for this repo the first time, so it doesn't need setting by hand.
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,5 +1,7 @@
 import {
   Fragment,
+  memo,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -210,6 +212,11 @@ interface DragState {
    * created.
    */
   overBin: boolean;
+  /**
+   * The bin's box, measured on the first move that finds it. It cannot move while a drag is
+   * running, and re-measuring it every move forces a layout on each one.
+   */
+  binRect: DOMRect | null;
   /** Kept so exactly these listeners can be detached again when the drag ends. */
   move: (e: PointerEvent) => void;
   end: () => void;
@@ -235,8 +242,110 @@ function ThingArt({ id }: { id: string }): ReactElement | null {
   );
 }
 
+/**
+ * One piece of furniture, plus whatever is on its shelves.
+ *
+ * Memoised, and that is the whole reason it is a component at all. Dragging updates the room
+ * on every pointer move, and redrawing thirteen pieces — each of which builds a few dozen SVG
+ * nodes — to move one of them put the dragged piece a frame or two behind the finger. Moving a
+ * piece replaces only that item object, so every other `item` prop keeps its identity and this
+ * skips the work entirely.
+ */
+const Piece = memo(function Piece({
+  item,
+  dragging,
+  popped,
+  onGrab,
+  onGrabThing,
+}: {
+  item: PlacedFurniture;
+  dragging: boolean;
+  popped: boolean;
+  onGrab: (e: ReactPointerEvent<SVGGElement>, id: string) => void;
+  onGrabThing: (e: ReactPointerEvent<SVGGElement>, from: ThingSource, thingId: string) => void;
+}): ReactElement | null {
+  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, item);
+  if (!art) return null;
+
+  return (
+    <Fragment>
+      {/* The positioning transform and the pop animation live on separate groups: a CSS
+          animation on `transform` would otherwise override the attribute and snap the piece
+          back to where it was authored. */}
+      <g
+        className={"draggable" + (dragging ? " is-dragging" : "")}
+        transform={"translate(" + item.dx + " " + (FURNITURE_DROP + item.dy) + ")"}
+        onPointerDown={(e) => onGrab(e, item.id)}
+      >
+        <g className="furniture-in">{art}</g>
+      </g>
+
+      {/* What is inside an open container is a layer of its own rather than part of the piece:
+          anything drawn inside the furniture's group would drag the furniture instead of
+          itself. */}
+      {item.open &&
+        item.stored.map((thingId, i) => {
+          const slot = slotAt(item.id, i);
+          const thing = THINGS[thingId];
+          if (!slot || !thing) return null;
+          return (
+            <g
+              key={thingId + "-" + i}
+              className="draggable"
+              transform={
+                "translate(" + (item.dx + slot.x) + " " +
+                (FURNITURE_DROP + item.dy + slot.y) + ") scale(" + slot.scale + ")"
+              }
+              onPointerDown={(e) => onGrabThing(e, { kind: "container", id: item.id, index: i }, thingId)}
+            >
+              {/* A pad the size of the slot — a carrot drawn this small is far too little to
+                  aim a finger at. */}
+              <rect x={-24} y={-24} width={48} height={48} fill="transparent" />
+              {thing.art()}
+            </g>
+          );
+        })}
+    </Fragment>
+  );
+});
+
+/** Memoised for the same reason: dragging the furniture must not redraw the whole character. */
+const Character = memo(function Character({
+  look,
+  uid,
+  x,
+  y,
+  pose,
+  chewing,
+  dragging,
+  onGrab,
+}: {
+  look: AvatarLook;
+  uid: string;
+  x: number;
+  y: number;
+  pose: AvatarPose;
+  chewing: boolean;
+  dragging: boolean;
+  onGrab: (e: ReactPointerEvent<SVGGElement>) => void;
+}): ReactElement {
+  return (
+    <g
+      className={"draggable" + (dragging ? " is-dragging" : "")}
+      transform={
+        "translate(" + x + " " + y + ")" +
+        (pose === "lie" ? " rotate(-90)" : "") +
+        " scale(0.47) translate(-100 -380)"
+      }
+      onPointerDown={onGrab}
+    >
+      <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} />
+    </g>
+  );
+});
+
 /** The window, or — outdoors — the sky, both of which change with the time of day. */
-function RoomFittings({ room, time }: { room: RoomDef; time: TimeOfDay }): ReactElement {
+const RoomFittings = memo(function RoomFittings({ room, time }: { room: RoomDef; time: TimeOfDay }): ReactElement {
   if (room.outdoor) {
     return (
       <g>
@@ -299,7 +408,7 @@ function RoomFittings({ room, time }: { room: RoomDef; time: TimeOfDay }): React
       <path d={"M0,44 h" + ROOM_W} stroke={room.wallTrim} strokeWidth={6} opacity={0.65} />
     </g>
   );
-}
+});
 
 export function ExploreMode({
   look,
@@ -445,10 +554,15 @@ export function ExploreMode({
     setPot([]);
   }
 
-  function isOverBin(ev: PointerEvent): boolean {
-    const el = binRef.current;
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
+  function isOverBin(drag: DragState, ev: PointerEvent): boolean {
+    if (!drag.binRect) {
+      // It only exists from the render after the drag started, so the first move or two may
+      // find nothing there yet.
+      const el = binRef.current;
+      if (!el) return false;
+      drag.binRect = el.getBoundingClientRect();
+    }
+    const r = drag.binRect;
     return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
   }
 
@@ -543,7 +657,7 @@ export function ExploreMode({
           const place = item && seatPlace({ ...item, dx: x, dy: y });
           if (place) onMoveAvatar(place.x, place.y);
         }
-        const over = isOverBin(ev);
+        const over = isOverBin(drag, ev);
         if (over !== drag.overBin) {
           drag.overBin = over;
           setOverBin(over);
@@ -591,6 +705,7 @@ export function ExploreMode({
       scale,
       bounds,
       overBin: false,
+      binRect: null,
       move,
       end,
     };
@@ -904,9 +1019,30 @@ export function ExploreMode({
     return () => clearTimeout(timer);
   }, [chewing]);
 
-  const dragHandlers = (target: DragTarget) => ({
-    onPointerDown: (e: ReactPointerEvent<SVGGElement>) => startDrag(e, target),
-  });
+  /**
+   * The scene's pieces are memoised, which only works if the handler they are given keeps its
+   * identity. These read the current implementation out of a ref, so they never change while
+   * still calling the latest version.
+   */
+  const startDragRef = useRef(startDrag);
+  startDragRef.current = startDrag;
+  const startThingDragRef = useRef(startThingDrag);
+  startThingDragRef.current = startThingDrag;
+
+  const grabPiece = useCallback((e: ReactPointerEvent<SVGGElement>, id: string) => {
+    startDragRef.current(e, { kind: "furniture", id });
+  }, []);
+
+  const grabAvatar = useCallback((e: ReactPointerEvent<SVGGElement>) => {
+    startDragRef.current(e, { kind: "avatar" });
+  }, []);
+
+  const grabThing = useCallback(
+    (e: ReactPointerEvent<SVGGElement>, from: ThingSource, thingId: string) => {
+      startThingDragRef.current(e, from, thingId);
+    },
+    []
+  );
 
   const tint = TINT[timeOfDay];
   const lit = timeOfDay !== "day" ? roomState.items.filter((i) => LIGHT_GLOW[i.id] && isLit(i.id, i)) : [];
@@ -1005,73 +1141,28 @@ export function ExploreMode({
             {/* Wall fittings, so every room has something on it even with nothing placed. */}
             <RoomFittings room={room} time={timeOfDay} />
 
-            {roomState.items.map((item) => {
-              const art =
-                item.id === "balloons" && poppedAt !== null
-                  ? POPPED_BALLOONS()
-                  : renderFurniture(item.id, item);
-              if (!art) return null;
-              return (
-                <Fragment key={item.id}>
-                  {/* The positioning transform and the pop animation live on separate groups: a
-                      CSS animation on `transform` would otherwise override the attribute and
-                      snap the piece back to where it was authored. */}
-                  <g
-                    className={"draggable" + (draggingKey === item.id ? " is-dragging" : "")}
-                    transform={"translate(" + item.dx + " " + (FURNITURE_DROP + item.dy) + ")"}
-                    {...dragHandlers({ kind: "furniture", id: item.id })}
-                  >
-                    <g className="furniture-in">{art}</g>
-                  </g>
-
-                  {/* What is inside an open container is a layer of its own rather than part of
-                      the piece: anything drawn inside the furniture's group would drag the
-                      furniture instead of itself. */}
-                  {item.open &&
-                    item.stored.map((thingId, i) => {
-                      const slot = slotAt(item.id, i);
-                      const thing = THINGS[thingId];
-                      if (!slot || !thing) return null;
-                      return (
-                        <g
-                          key={thingId + "-" + i}
-                          className="draggable"
-                          transform={
-                            "translate(" + (item.dx + slot.x) + " " +
-                            (FURNITURE_DROP + item.dy + slot.y) + ") scale(" + slot.scale + ")"
-                          }
-                          onPointerDown={(e) =>
-                            startThingDrag(e, { kind: "container", id: item.id, index: i }, thingId)
-                          }
-                        >
-                          {/* A pad the size of the slot — a carrot drawn this small is far too
-                              little to aim a finger at. */}
-                          <rect x={-24} y={-24} width={48} height={48} fill="transparent" />
-                          {thing.art()}
-                        </g>
-                      );
-                    })}
-                </Fragment>
-              );
-            })}
+            {roomState.items.map((item) => (
+              <Piece
+                key={item.id}
+                item={item}
+                dragging={draggingKey === item.id}
+                popped={item.id === "balloons" && poppedAt !== null}
+                onGrab={grabPiece}
+                onGrabThing={grabThing}
+              />
+            ))}
 
             {look && (
-              <g
-                className={"draggable" + (draggingKey === "avatar" ? " is-dragging" : "")}
-                transform={
-                  "translate(" + roomState.avatarX + " " + roomState.avatarY + ")" +
-                  (roomState.avatarPose === "lie" ? " rotate(-90)" : "") +
-                  " scale(0.47) translate(-100 -380)"
-                }
-                {...dragHandlers({ kind: "avatar" })}
-              >
-                <AvatarLayers
-                  look={look}
-                  uid={"room-" + roomId}
-                  pose={roomState.avatarPose}
-                  chewing={chewing}
-                />
-              </g>
+              <Character
+                look={look}
+                uid={"room-" + roomId}
+                x={roomState.avatarX}
+                y={roomState.avatarY}
+                pose={roomState.avatarPose}
+                chewing={chewing}
+                dragging={draggingKey === "avatar"}
+                onGrab={grabAvatar}
+              />
             )}
 
             {/* Where the thing on the end of her finger can be let go. */}

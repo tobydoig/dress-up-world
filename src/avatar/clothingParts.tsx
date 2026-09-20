@@ -26,6 +26,14 @@ export interface GarmentProps {
   pose: Pose;
 }
 
+/**
+ * Sleeves are keyed "sl"/"sr" everywhere, so that key also decides which arm's class they
+ * carry. A sleeve has to swing with the arm inside it, and the two are drawn in different
+ * groups — the bare arm with the body, the sleeve with the top — so they can't share a
+ * wrapper and have to be animated as a matched pair instead.
+ */
+const SLEEVE_ARM: Record<string, string> = { sl: "av-arm-l", sr: "av-arm-r" };
+
 function limb(
   line: Segment,
   width: number,
@@ -35,6 +43,7 @@ function limb(
   return (
     <line
       key={key}
+      className={key ? SLEEVE_ARM[key] : undefined}
       x1={line.x1}
       y1={line.y1}
       x2={line.x2}

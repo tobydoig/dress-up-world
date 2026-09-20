@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
 import { capacityOf } from "./explore/furniture";
@@ -20,6 +20,14 @@ import { isMuted, setMuted } from "./lib/sound";
 
 type Mode = "design" | "explore";
 
+/**
+ * How long to wait after the last change before writing to storage. A drag changes the save on
+ * every pointer move, and each write is the whole thing — every room, every character, every
+ * scribble — re-serialised. Waiting for things to settle turns a drag's worth of writes into
+ * one, which matters most on the phone this is actually played on.
+ */
+const PERSIST_DELAY = 300;
+
 /** Drop one entry by position, so two of the same thing in a basket stay distinguishable. */
 function removeAt<T>(list: T[], index: number): T[] {
   return [...list.slice(0, index), ...list.slice(index + 1)];
@@ -36,9 +44,25 @@ export function App() {
   });
   const [muted, setMutedState] = useState(isMuted());
 
+  const saveRef = useRef(save);
+  saveRef.current = save;
+
   useEffect(() => {
-    persist(save);
+    const timer = setTimeout(() => persist(save), PERSIST_DELAY);
+    return () => clearTimeout(timer);
   }, [save]);
+
+  // A phone can close the tab without warning, and anything still waiting on that timer would
+  // go with it. Write immediately whenever the page is put away.
+  useEffect(() => {
+    const flush = () => persist(saveRef.current);
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", flush);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, []);
 
   const activeLook = save.characters.find((c) => c.id === save.activeId)?.look ?? null;
 

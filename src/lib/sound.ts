@@ -103,3 +103,42 @@ export function playBang(): void {
   tone({ from: 900, to: 90, duration: 0.14, type: "square", gain: 0.16 });
   tone({ from: 320, to: 60, duration: 0.2, type: "triangle", gain: 0.1, delay: 0.02 });
 }
+
+/** A cupboard door or a drawer. */
+export function playCreak(): void {
+  tone({ from: 180, to: 300, duration: 0.16, type: "sine", gain: 0.09 });
+}
+
+/** Taking something from a market stall. */
+export function playCoin(): void {
+  tone({ from: 1050, duration: 0.08, type: "triangle", gain: 0.11 });
+  tone({ from: 1570, duration: 0.14, type: "triangle", gain: 0.1, delay: 0.06 });
+}
+
+/** Eating something nice. */
+export function playNom(): void {
+  tone({ from: 300, to: 180, duration: 0.09, type: "sine", gain: 0.13 });
+  tone({ from: 260, to: 150, duration: 0.11, type: "sine", gain: 0.12, delay: 0.1 });
+}
+
+/** Eating something that should have been cooked first. */
+export function playYuck(): void {
+  tone({ from: 300, to: 130, duration: 0.3, type: "sawtooth", gain: 0.09 });
+}
+
+/** Two things turning into dinner. */
+export function playChime(): void {
+  tone({ from: 520, duration: 0.14, type: "sine", gain: 0.12 });
+  tone({ from: 780, duration: 0.14, type: "sine", gain: 0.12, delay: 0.08 });
+  tone({ from: 1040, duration: 0.3, type: "sine", gain: 0.12, delay: 0.16 });
+}
+
+/** Something landing in the bin. */
+export function playThud(): void {
+  tone({ from: 200, to: 70, duration: 0.18, type: "triangle", gain: 0.14 });
+}
+
+/** Turning a piece of furniture on the spot. */
+export function playTurn(): void {
+  tone({ from: 380, to: 540, duration: 0.1, type: "sine", gain: 0.09 });
+}

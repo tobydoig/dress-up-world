@@ -1,11 +1,35 @@
 import type { ReactElement } from "react";
+import { STALL_STOCK, THINGS } from "../data/things";
+import type { Stroke } from "../lib/storage";
 
 /**
  * Furniture is drawn in room coordinates with the back wall bottom at y=232. These are the
  * positions a piece takes when it's first added; from there it can be dragged anywhere, and
  * only the offset from this authored spot is saved.
+ *
+ * A piece is handed everything it might remember about itself rather than reading state from
+ * anywhere: which way round it is standing, whether it is open, whether its bulb is on, what
+ * has been put inside it, and what has been drawn on it. Almost every piece ignores all of it.
  */
-export type FurnitureRender = () => ReactElement;
+export interface FurnitureCtx {
+  /** Quarter turns from the authored direction, 0-3. */
+  facing: number;
+  open: boolean;
+  on: boolean;
+  stored: string[];
+  strokes: Stroke[];
+}
+
+export type FurnitureRender = (ctx: FurnitureCtx) => ReactElement;
+
+/** A piece as it appears in the catalogue: shut, switched on, and empty. */
+export const CATALOGUE_CTX: FurnitureCtx = {
+  facing: 0,
+  open: false,
+  on: true,
+  stored: [],
+  strokes: [],
+};
 
 /**
  * How a piece is allowed to be placed. The default (everything not listed) is floor-standing:
@@ -14,7 +38,7 @@ export type FurnitureRender = () => ReactElement;
  */
 
 /** Hangs on the wall; never comes below the floor line. */
-export const WALL_MOUNTED = new Set(["poster", "shelves"]);
+export const WALL_MOUNTED = new Set(["poster", "shelves", "pictureFrame", "cupboard"]);
 
 /** Drifts about in the air, above the floor or the wall. */
 export const FLOATING = new Set(["balloons"]);
@@ -30,25 +54,127 @@ export const STACKABLE = new Set([
   "teddy", "plushie", "fruitBowl", "blocks", "bedsideLamp", "computer", "deskLamp", "plantSmall",
 ]);
 
+/** Pieces you can open and put things inside. Tapping one opens it. */
+export const CONTAINERS = new Set(["fridge", "wardrobe", "toyBox", "cupboard", "drawers"]);
+
+/** Pieces that sell things. Tapping one opens its stall. */
+export const STALLS = new Set(Object.keys(STALL_STOCK));
+
+/** Lamps you can switch on and off. */
+export const LAMPS = new Set(["deskLamp", "bedsideLamp", "floorLamp"]);
+
+/**
+ * Chairs are the one kind of thing with four hand-drawn views, so they genuinely turn on the
+ * spot: side on, facing you, side on the other way, and seen from behind. There is no 3D here
+ * and no projection maths — just four drawings, which is how sprite art has always done it.
+ */
+export const ROTATABLE = new Set(["chairLeft", "chairRight"]);
+
+/**
+ * Pieces that only turn to face the other way, mirrored about this x in authored coordinates.
+ * Worth it only where a piece is visibly asymmetric — mirroring a bookcase achieves nothing.
+ */
+export const FLIP_AXIS: Record<string, number> = {
+  desk: 203,
+  easel: 272,
+  counter: 75,
+  teddy: 318,
+  plushie: 300,
+};
+
+/** How many distinct ways round a piece can stand. 1 means tapping it won't turn it. */
+export function facingCount(id: string): number {
+  if (ROTATABLE.has(id)) return 4;
+  if (FLIP_AXIS[id] !== undefined) return 2;
+  return 1;
+}
+
+/** Where a lit piece pools its light, in authored coordinates. */
+export interface Glow {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+}
+
+export const LIGHT_GLOW: Record<string, Glow> = {
+  deskLamp: { cx: 316, cy: 206, rx: 74, ry: 56 },
+  bedsideLamp: { cx: 160, cy: 180, rx: 70, ry: 58 },
+  floorLamp: { cx: 368, cy: 132, rx: 86, ry: 76 },
+  // The fridge only lights up because its door is open, which is the whole charm of it.
+  fridge: { cx: 359, cy: 174, rx: 52, ry: 62 },
+};
+
+/** Whether a placed piece is currently giving off light. */
+export function isLit(id: string, ctx: FurnitureCtx): boolean {
+  if (id === "fridge") return ctx.open;
+  return LAMPS.has(id) && ctx.on;
+}
+
+/** Where the things inside an open container are stacked up. */
+export interface Slots {
+  x: number;
+  y: number;
+  cols: number;
+  rows: number;
+  stepX: number;
+  stepY: number;
+  scale: number;
+}
+
+export const CONTAINER_SLOTS: Record<string, Slots> = {
+  fridge: { x: 348, y: 144, cols: 2, rows: 3, stepX: 26, stepY: 32, scale: 0.52 },
+  wardrobe: { x: 50, y: 182, cols: 2, rows: 1, stepX: 34, stepY: 0, scale: 0.62 },
+  toyBox: { x: 38, y: 208, cols: 3, rows: 1, stepX: 24, stepY: 0, scale: 0.5 },
+  cupboard: { x: 44, y: 122, cols: 3, rows: 1, stepX: 28, stepY: 0, scale: 0.52 },
+  drawers: { x: 138, y: 190, cols: 3, rows: 1, stepX: 22, stepY: 0, scale: 0.44 },
+};
+
+export function capacityOf(id: string): number {
+  const s = CONTAINER_SLOTS[id];
+  return s ? s.cols * s.rows : 0;
+}
+
+/**
+ * Where the i-th thing inside a container sits. The room draws the contents itself rather than
+ * the piece drawing them, because each thing has to be draggable on its own — anything inside
+ * the furniture's own group would drag the furniture instead.
+ */
+export function slotAt(id: string, i: number): { x: number; y: number; scale: number } | null {
+  const s = CONTAINER_SLOTS[id];
+  if (!s || i >= s.cols * s.rows) return null;
+  return {
+    x: s.x + (i % s.cols) * s.stepX,
+    y: s.y + Math.floor(i / s.cols) * s.stepY,
+    scale: s.scale,
+  };
+}
+
+/**
+ * Where a thing has to be let go for it to land inside an open container, in authored
+ * coordinates. Deliberately the whole front of the piece rather than the shelves alone: a
+ * child aims at the fridge, not at a particular shelf in it.
+ */
+export const CONTAINER_DROP: Record<string, { x: number; y: number; w: number; h: number }> = {
+  fridge: { x: 330, y: 116, w: 58, h: 116 },
+  wardrobe: { x: 22, y: 108, w: 92, h: 124 },
+  toyBox: { x: 16, y: 170, w: 86, h: 62 },
+  cupboard: { x: 18, y: 90, w: 104, h: 60 },
+  drawers: { x: 114, y: 156, w: 88, h: 76 },
+};
+
 const WOOD = "#b5763f";
 const WOOD_DARK = "#8d5a2c";
 
 /**
- * A side-on chair: back post with a rail, seat, and two legs. Drawn once in local coordinates
- * with the seat facing +x and mirrored for the chair on the other side of the table, so the
- * pair face each other. Legs end at local y=35, which places the base on the floor line.
+ * An invisible pad across a piece that has holes in it — the gap under a stall's awning, the
+ * space between a chair's back and its legs, everything either side of a lamp's stem. A tap
+ * only reaches a shape that is actually inked, so without this a child aiming at the middle of
+ * a stall taps straight through it into the room behind. `transparent` is a colour, unlike
+ * `none`, so it still counts as painted for hit testing.
  */
-function chair(x: number, colour: string, facing: number): ReactElement {
-  return (
-    <g transform={"translate(" + x + " 197) scale(" + facing + " 1)"}>
-      <rect x={-6} y={-52} width={11} height={60} rx={5.5} fill={colour} />
-      {/* A cap centred on the post. An earlier version curved off to one side and read as a hook. */}
-      <rect x={-10} y={-57} width={19} height={10} rx={5} fill={shade(colour, 16)} />
-      <rect x={-6} y={0} width={39} height={10} rx={5} fill={shade(colour, 14)} />
-      <rect x={25} y={8} width={8} height={27} rx={4} fill={shade(colour, -28)} />
-      <rect x={-5} y={8} width={8} height={27} rx={4} fill={shade(colour, -28)} />
-    </g>
-  );
+function hitPad(x: number, y: number, w: number, h: number): ReactElement {
+  return <rect x={x} y={y} width={w} height={h} fill="transparent" />;
 }
 
 function shade(hex: string, amount: number): string {
@@ -60,12 +186,144 @@ function shade(hex: string, amount: number): string {
   return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
 }
 
+/* ---------------- chairs, from four sides ---------------- */
+
+/** Side on: back post with a cap, seat facing +x, two legs. Base sits at local y=35. */
+function chairSide(colour: string): ReactElement {
+  return (
+    <g>
+      {hitPad(-23, -58, 57, 93)}
+      <rect x={-6} y={-52} width={11} height={60} rx={5.5} fill={colour} />
+      {/* A cap centred on the post. An earlier version curved off to one side and read as a hook. */}
+      <rect x={-10} y={-57} width={19} height={10} rx={5} fill={shade(colour, 16)} />
+      <rect x={-6} y={0} width={39} height={10} rx={5} fill={shade(colour, 14)} />
+      <rect x={25} y={8} width={8} height={27} rx={4} fill={shade(colour, -28)} />
+      <rect x={-5} y={8} width={8} height={27} rx={4} fill={shade(colour, -28)} />
+    </g>
+  );
+}
+
+/** Turned towards you: the seat comes forward and the back stands behind it. */
+function chairFront(colour: string): ReactElement {
+  return (
+    <g>
+      {hitPad(-23, -58, 57, 93)}
+      <rect x={-17} y={-52} width={34} height={48} rx={7} fill={shade(colour, -10)} />
+      <rect x={-20} y={-57} width={40} height={10} rx={5} fill={shade(colour, 16)} />
+      <rect x={-19} y={6} width={8} height={29} rx={4} fill={shade(colour, -28)} />
+      <rect x={11} y={6} width={8} height={29} rx={4} fill={shade(colour, -28)} />
+      <rect x={-22} y={-6} width={44} height={12} rx={6} fill={shade(colour, 14)} />
+    </g>
+  );
+}
+
+/** Turned away: the back panel hides the seat, with just its edge showing underneath. */
+function chairBack(colour: string): ReactElement {
+  return (
+    <g>
+      {hitPad(-23, -58, 57, 93)}
+      <rect x={-22} y={-5} width={44} height={11} rx={5.5} fill={shade(colour, -4)} />
+      <rect x={-19} y={6} width={8} height={29} rx={4} fill={shade(colour, -28)} />
+      <rect x={11} y={6} width={8} height={29} rx={4} fill={shade(colour, -28)} />
+      <rect x={-17} y={-52} width={34} height={50} rx={7} fill={colour} />
+      <rect x={-20} y={-57} width={40} height={10} rx={5} fill={shade(colour, 16)} />
+    </g>
+  );
+}
+
+/**
+ * Where each chair was authored, and which way it was facing — the pair either side of the
+ * table start facing each other, and `facing` counts quarter turns from there.
+ */
+const CHAIR_BASE: Record<string, { x: number; colour: string; dir: number }> = {
+  chairLeft: { x: 124, colour: "#2ed6b8", dir: 1 },
+  chairRight: { x: 288, colour: "#ff9040", dir: -1 },
+};
+
+function chairTurn(base: { dir: number }, facing: number): number {
+  return (facing + (base.dir < 0 ? 2 : 0)) % 4;
+}
+
+/** How far the seat is from the back post, side on. */
+const SEAT_OUT = 13;
+
+/**
+ * How far the place you sit is from the chair's own anchor. Seen side on the seat sticks out
+ * to one side of the back post; turned to face you or away it is centred — so a chair that is
+ * turned moves the sitter with it.
+ */
+export function seatShift(id: string, facing: number): number {
+  const base = CHAIR_BASE[id];
+  if (!base) return 0;
+  const turn = chairTurn(base, facing);
+  return turn === 0 ? SEAT_OUT : turn === 2 ? -SEAT_OUT : 0;
+}
+
+/**
+ * A chair in whichever of its four views it is currently showing.
+ *
+ * Whoever is sitting on it is always drawn AFTER it, never between its parts. The character is
+ * drawn front-on whatever the chair is doing, so any piece of chair laid over her — a back
+ * panel, a seat, a pair of front legs — just reads as her being stuck behind the furniture.
+ */
+function chair(id: string, facing: number): ReactElement {
+  const base = CHAIR_BASE[id];
+  if (!base) return <g />;
+  const turn = chairTurn(base, facing);
+  // Only the side view has a direction to mirror; the other two are symmetrical.
+  const mirror = turn === 2 ? -1 : 1;
+  const view =
+    turn === 1 ? chairFront(base.colour) : turn === 3 ? chairBack(base.colour) : chairSide(base.colour);
+  return <g transform={"translate(" + base.x + " 197) scale(" + mirror + " 1)"}>{view}</g>;
+}
+
+/* ---------------- market stalls ---------------- */
+
+const STALL_W = 92;
+
+/** A striped awning on two posts with a cloth-covered table, and its stock laid out on top. */
+function stall(x: number, colour: string, stock: string[]): ReactElement {
+  const step = (STALL_W - 20) / stock.length;
+  return (
+    <g transform={"translate(" + x + " 0)"}>
+      {hitPad(-4, 112, STALL_W + 8, 120)}
+      <rect x={7} y={138} width={6} height={94} rx={3} fill={WOOD_DARK} />
+      <rect x={STALL_W - 13} y={138} width={6} height={94} rx={3} fill={WOOD_DARK} />
+      <path d={"M2,192 h" + (STALL_W - 4) + " l-7,36 h-" + (STALL_W - 18) + " z"} fill={shade(colour, -30)} />
+      <rect x={0} y={182} width={STALL_W} height={11} rx={5.5} fill={WOOD} />
+      {stock.map((id, i) => {
+        const thing = THINGS[id];
+        if (!thing) return null;
+        return (
+          <g key={id} transform={"translate(" + (10 + step * (i + 0.5)) + " 170) scale(0.5)"}>
+            {thing.art()}
+          </g>
+        );
+      })}
+      <path d={"M-4,140 q" + (STALL_W / 2 + 4) + ",-30 " + (STALL_W + 8) + ",0 z"} fill={colour} />
+      {[0, 1, 2, 3].map((i) => (
+        <path
+          key={i}
+          d={
+            "M" + (-4 + (i * 2 + 1) * ((STALL_W + 8) / 8)) + ",140 " +
+            "l" + ((STALL_W + 8) / 8) + ",0 " +
+            "l-" + ((STALL_W + 8) / 14) + ",-16 z"
+          }
+          fill="#fffdfa"
+          opacity={0.75}
+        />
+      ))}
+      <path d={"M-4,140 h" + (STALL_W + 8)} stroke={shade(colour, -34)} strokeWidth={4} />
+    </g>
+  );
+}
+
 /**
  * The moment after a balloon goes pop: a starburst of spikes and curled rubber flying outward,
  * which animates away in half a second and leaves the bare strings behind. An earlier version
  * just swapped in some static shreds, which read as leaves rather than a pop.
  */
-export const POPPED_BALLOONS: FurnitureRender = () => (
+export const POPPED_BALLOONS = (): ReactElement => (
   <g>
     <path d="M356,150 q6,22 -3,42 M374,146 q-5,24 3,46" stroke="#ffffff" strokeWidth={2} opacity={0.5} fill="none" />
     {([
@@ -95,28 +353,57 @@ export const POPPED_BALLOONS: FurnitureRender = () => (
   </g>
 );
 
-/** The desk lamp is the one piece with a state of its own, so it isn't a plain render. */
-export function deskLamp(on: boolean): ReactElement {
+/**
+ * The drawing pad's own coordinate space. The pad she draws on and the mount inside the frame
+ * are the same shape, so a drawing just scales down into the picture without distorting.
+ */
+export const PAD = { w: 200, h: 150 };
+const FRAME_ART = { x: 68, y: 79, w: 70, h: 52.5 };
+
+export function padScale(): number {
+  return FRAME_ART.w / PAD.w;
+}
+
+function drawingArt(strokes: Stroke[]): ReactElement {
   return (
-    <g>
-      {on && <ellipse cx={300} cy={214} rx={54} ry={34} fill="#ffe89a" opacity={0.42} />}
-      <ellipse cx={300} cy={230} rx={18} ry={6} fill="#5b6180" />
-      <path d="M300,228 l-2,-34 l6,0 l-2,34 z" fill="#8b93b5" />
-      <path d="M298,196 q0,-18 18,-24" stroke="#8b93b5" strokeWidth={6} fill="none" strokeLinecap="round" />
-      <path d="M302,166 l24,-8 l10,22 l-26,8 z" fill={on ? "#ffd23f" : "#9aa2c0"} />
-      <circle cx={318} cy={182} r={5} fill={on ? "#fff6c9" : "#7d85a5"} />
+    <g transform={"translate(" + FRAME_ART.x + " " + FRAME_ART.y + ") scale(" + padScale() + ")"}>
+      {strokes.map((s, i) => (
+        <polyline
+          key={i}
+          points={s.points.join(" ")}
+          fill="none"
+          stroke={s.colour}
+          strokeWidth={s.width}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
     </g>
   );
 }
 
 export const FURNITURE: Record<string, FurnitureRender> = {
   // ---------------- play room ----------------
-  toyBox: () => (
+  toyBox: (c) => (
     <g>
-      <rect x={20} y={186} width={78} height={46} rx={7} fill="#ff7aa8" />
-      <rect x={16} y={176} width={86} height={16} rx={7} fill="#ff4d7e" />
-      <circle cx={59} cy={210} r={7} fill="#ffd23f" />
-      <path d="M34,200 h12 M72,200 h12" stroke="#ffffff" strokeWidth={4} strokeLinecap="round" opacity={0.7} />
+      {c.open && <rect x={20} y={186} width={78} height={46} rx={7} fill="#7d3357" />}
+      {!c.open && <rect x={20} y={186} width={78} height={46} rx={7} fill="#ff7aa8" />}
+      {c.open ? (
+        // Propped up above the opening. Swinging it right out to one side read as a stick
+        // lying next to the box rather than a lid that had been lifted.
+        <g transform="rotate(-13 59 172)">
+          <rect x={16} y={164} width={86} height={15} rx={7} fill="#ff4d7e" />
+        </g>
+      ) : (
+        <rect x={16} y={176} width={86} height={16} rx={7} fill="#ff4d7e" />
+      )}
+      {!c.open && (
+        <g>
+          <circle cx={59} cy={210} r={7} fill="#ffd23f" />
+          <path d="M34,200 h12 M72,200 h12" stroke="#ffffff" strokeWidth={4} strokeLinecap="round" opacity={0.7} />
+        </g>
+      )}
+      {c.open && <rect x={18} y={184} width={82} height={7} rx={3.5} fill="#ff9ec4" />}
     </g>
   ),
 
@@ -145,6 +432,7 @@ export const FURNITURE: Record<string, FurnitureRender> = {
 
   easel: () => (
     <g>
+      {hitPad(240, 136, 64, 96)}
       <path d="M244,232 L258,150 M300,232 L286,150" stroke={WOOD} strokeWidth={6} strokeLinecap="round" />
       <rect x={244} y={136} width={56} height={48} rx={4} fill="#fffdfa" stroke={WOOD_DARK} strokeWidth={3} />
       <path d="M254,172 q10,-22 20,-6 q8,-14 16,6 z" fill="#5ed64a" />
@@ -171,6 +459,24 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
+  /** A frame with a blank mount you can draw on. Tapping it opens the drawing pad. */
+  pictureFrame: (c) => (
+    <g>
+      <rect x={58} y={68} width={90} height={76} rx={6} fill={WOOD} />
+      <rect x={64} y={74} width={78} height={64} rx={4} fill="#fffdfa" />
+      <rect x={FRAME_ART.x} y={FRAME_ART.y} width={FRAME_ART.w} height={FRAME_ART.h} fill="#fffdfa" />
+      {drawingArt(c.strokes)}
+      {c.strokes.length === 0 && (
+        <g opacity={0.35}>
+          <path d="M92,104 l9,-11 l7,9 l6,-6 l8,14 z" fill="#c8b6e8" />
+          <circle cx={88} cy={92} r={5} fill="#ffd23f" />
+        </g>
+      )}
+      <rect x={58} y={68} width={90} height={76} rx={6} fill="none" stroke={WOOD_DARK} strokeWidth={3} />
+      <path d="M96,66 l7,-8 l7,8 z" fill={WOOD_DARK} />
+    </g>
+  ),
+
   // ---------------- kitchen ----------------
   counter: () => (
     <g>
@@ -183,15 +489,78 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  fridge: () => (
+  /** Where two things become one dinner. The rings and the oven light up while it's in use. */
+  cooker: (c) => (
     <g>
-      <rect x={330} y={116} width={58} height={116} rx={8} fill="#dfe6f0" />
-      <rect x={330} y={116} width={58} height={40} rx={8} fill="#eef2f8" />
-      <path d="M330,158 h58" stroke="#b9c2d0" strokeWidth={3} />
-      <rect x={378} y={128} width={5} height={20} rx={2.5} fill="#98a3b5" />
-      <rect x={378} y={168} width={5} height={26} rx={2.5} fill="#98a3b5" />
-      <rect x={340} y={126} width={16} height={12} rx={2} fill="#ffd23f" />
-      <circle cx={350} cy={180} r={7} fill="#ff6fae" />
+      {c.open && (
+        <path
+          className="steam-wisp"
+          d="M286,144 q7,-9 0,-18 q-7,-9 0,-17 M298,144 q7,-9 0,-18 q-7,-9 0,-17"
+          stroke="#ffffff"
+          strokeWidth={3}
+          fill="none"
+          strokeLinecap="round"
+          opacity={0.75}
+        />
+      )}
+      <path d="M276,150 h32 l-5,18 h-22 z" fill="#8b93b5" />
+      <rect x={272} y={144} width={40} height={8} rx={4} fill="#a8b0cc" />
+      <rect x={258} y={176} width={68} height={56} rx={6} fill="#cfd6e2" />
+      <rect x={264} y={194} width={56} height={32} rx={4} fill={c.open ? "#ffcf7a" : "#4a4f63"} />
+      <rect x={264} y={194} width={56} height={6} rx={3} fill="#3a3f52" opacity={0.5} />
+      <rect x={258} y={166} width={68} height={12} rx={6} fill="#aab3c4" />
+      <circle cx={268} cy={172} r={4} fill={c.open ? "#ff7a3f" : "#7d85a5"} />
+      <circle cx={318} cy={172} r={4} fill={c.open ? "#ff7a3f" : "#7d85a5"} />
+      <rect x={282} y={182} width={20} height={5} rx={2.5} fill="#8b93b5" />
+    </g>
+  ),
+
+  fridge: (c) => (
+    <g>
+      {c.open ? (
+        <g>
+          <rect x={330} y={116} width={58} height={116} rx={8} fill="#b9c2d0" />
+          <rect x={336} y={122} width={46} height={104} rx={4} fill="#fff6d8" />
+          {[152, 186].map((y) => (
+            <rect key={y} x={336} y={y} width={46} height={4} rx={2} fill="#e0d5b4" />
+          ))}
+          {/* The door stands open towards you, foreshortened into a narrow slab. */}
+          <rect x={306} y={116} width={24} height={116} rx={6} fill="#dfe6f0" />
+          <rect x={306} y={116} width={24} height={40} rx={6} fill="#eef2f8" />
+          <rect x={309} y={166} width={5} height={26} rx={2.5} fill="#98a3b5" />
+        </g>
+      ) : (
+        <g>
+          <rect x={330} y={116} width={58} height={116} rx={8} fill="#dfe6f0" />
+          <rect x={330} y={116} width={58} height={40} rx={8} fill="#eef2f8" />
+          <path d="M330,158 h58" stroke="#b9c2d0" strokeWidth={3} />
+          <rect x={378} y={128} width={5} height={20} rx={2.5} fill="#98a3b5" />
+          <rect x={378} y={168} width={5} height={26} rx={2.5} fill="#98a3b5" />
+          <rect x={340} y={126} width={16} height={12} rx={2} fill="#ffd23f" />
+          <circle cx={350} cy={180} r={7} fill="#ff6fae" />
+        </g>
+      )}
+    </g>
+  ),
+
+  /** A wall cupboard above the counter, so the kitchen has somewhere to put the shopping. */
+  cupboard: (c) => (
+    <g>
+      <rect x={18} y={90} width={104} height={60} rx={6} fill={WOOD} />
+      <rect x={24} y={96} width={92} height={48} rx={4} fill={shade(WOOD, -34)} />
+      {c.open ? (
+        <g>
+          <rect x={4} y={92} width={16} height={56} rx={4} fill={shade(WOOD, 10)} />
+          <rect x={120} y={92} width={16} height={56} rx={4} fill={shade(WOOD, 10)} />
+        </g>
+      ) : (
+        <g>
+          <rect x={26} y={98} width={42} height={44} rx={4} fill={shade(WOOD, 8)} />
+          <rect x={72} y={98} width={42} height={44} rx={4} fill={shade(WOOD, 8)} />
+          <circle cx={64} cy={120} r={3.2} fill="#ffd23f" />
+          <circle cx={76} cy={120} r={3.2} fill="#ffd23f" />
+        </g>
+      )}
     </g>
   ),
 
@@ -206,8 +575,8 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  chairLeft: () => chair(124, "#2ed6b8", 1),
-  chairRight: () => chair(288, "#ff9040", -1),
+  chairLeft: (c) => chair("chairLeft", c.facing),
+  chairRight: (c) => chair("chairRight", c.facing),
 
   fruitBowl: () => (
     <g>
@@ -231,6 +600,7 @@ export const FURNITURE: Record<string, FurnitureRender> = {
   // ---------------- study ----------------
   desk: () => (
     <g>
+      {hitPad(128, 190, 150, 42)}
       <rect x={128} y={190} width={150} height={12} rx={6} fill={WOOD} />
       <rect x={134} y={202} width={10} height={30} rx={5} fill={WOOD_DARK} />
       <rect x={262} y={202} width={10} height={30} rx={5} fill={WOOD_DARK} />
@@ -254,6 +624,29 @@ export const FURNITURE: Record<string, FurnitureRender> = {
       <rect className="screen-cursor" x={215} y={173} width={7} height={6} fill="#4fe0c0" />
       <rect x={196} y={188} width={16} height={8} fill="#3a3a52" />
       <rect x={184} y={196} width={40} height={5} rx={2.5} fill="#2a2a40" />
+    </g>
+  ),
+
+  deskLamp: (c) => (
+    <g>
+      {hitPad(280, 156, 60, 76)}
+      <ellipse cx={300} cy={230} rx={18} ry={6} fill="#5b6180" />
+      <path d="M300,228 l-2,-34 l6,0 l-2,34 z" fill="#8b93b5" />
+      <path d="M298,196 q0,-18 18,-24" stroke="#8b93b5" strokeWidth={6} fill="none" strokeLinecap="round" />
+      <path d="M302,166 l24,-8 l10,22 l-26,8 z" fill={c.on ? "#ffd23f" : "#9aa2c0"} />
+      <circle cx={318} cy={182} r={5} fill={c.on ? "#fff6c9" : "#7d85a5"} />
+    </g>
+  ),
+
+  /** A floor stander, tall enough to light a whole corner once it gets dark. */
+  floorLamp: (c) => (
+    <g>
+      {hitPad(344, 86, 48, 146)}
+      <ellipse cx={368} cy={226} rx={22} ry={6} fill="#5b6180" />
+      <rect x={365} y={118} width={6} height={108} rx={3} fill="#8b93b5" />
+      <path d="M346,118 l9,-30 h26 l9,30 z" fill={c.on ? "#ffd23f" : "#9aa2c0"} />
+      <rect x={344} y={114} width={48} height={8} rx={4} fill={c.on ? "#ffe89a" : "#8b93b5"} />
+      <path d="M352,90 h28" stroke={shade("#ffd23f", -40)} strokeWidth={3} opacity={c.on ? 0.6 : 0.3} />
     </g>
   ),
 
@@ -328,23 +721,75 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  wardrobe: () => (
+  wardrobe: (c) => (
     <g>
       <rect x={22} y={108} width={92} height={124} rx={7} fill={WOOD} />
-      <rect x={30} y={118} width={36} height={104} rx={4} fill={WOOD_DARK} />
-      <rect x={70} y={118} width={36} height={104} rx={4} fill={WOOD_DARK} />
-      <circle cx={62} cy={170} r={3.4} fill="#ffd23f" />
-      <circle cx={74} cy={170} r={3.4} fill="#ffd23f" />
+      {c.open ? (
+        <g>
+          <rect x={30} y={118} width={76} height={104} rx={4} fill={shade(WOOD, -38)} />
+          <rect x={34} y={134} width={68} height={4} rx={2} fill="#d8c8a8" />
+          {/* Something hanging up, so an open wardrobe isn't just a dark hole. */}
+          {[
+            [48, "#ff6fae"], [68, "#3aa0ff"], [88, "#ffd23f"],
+          ].map(([x, colour]) => (
+            <g key={x as number}>
+              <path
+                d={"M" + x + ",138 l-9,20 h18 z"}
+                fill={colour as string}
+              />
+              <path d={"M" + x + ",138 v-5"} stroke="#d8c8a8" strokeWidth={2} />
+            </g>
+          ))}
+          <rect x={6} y={112} width={16} height={116} rx={5} fill={shade(WOOD, 12)} />
+          <rect x={114} y={112} width={16} height={116} rx={5} fill={shade(WOOD, 12)} />
+        </g>
+      ) : (
+        <g>
+          <rect x={30} y={118} width={36} height={104} rx={4} fill={WOOD_DARK} />
+          <rect x={70} y={118} width={36} height={104} rx={4} fill={WOOD_DARK} />
+          <circle cx={62} cy={170} r={3.4} fill="#ffd23f" />
+          <circle cx={74} cy={170} r={3.4} fill="#ffd23f" />
+        </g>
+      )}
     </g>
   ),
 
-  bedsideLamp: () => (
+  /** A chest of drawers. The top drawer slides out; the other two stay shut. */
+  drawers: (c) => (
+    <g>
+      <rect x={118} y={156} width={80} height={76} rx={6} fill={WOOD} />
+      {[
+        [192, 22],
+        [216, 14],
+      ].map(([y, h]) => (
+        <g key={y}>
+          <rect x={124} y={y} width={68} height={h} rx={3} fill={shade(WOOD, 14)} />
+          <rect x={150} y={y + h / 2 - 2} width={16} height={4} rx={2} fill="#ffd23f" />
+        </g>
+      ))}
+      {c.open ? (
+        <g>
+          <rect x={124} y={164} width={68} height={22} rx={3} fill={shade(WOOD, -40)} />
+          <rect x={114} y={180} width={88} height={26} rx={4} fill={shade(WOOD, 18)} />
+          <rect x={114} y={198} width={88} height={8} rx={4} fill={shade(WOOD, 4)} />
+          <rect x={148} y={200} width={20} height={4} rx={2} fill="#ffd23f" />
+        </g>
+      ) : (
+        <g>
+          <rect x={124} y={164} width={68} height={22} rx={3} fill={shade(WOOD, 14)} />
+          <rect x={150} y={173} width={16} height={4} rx={2} fill="#ffd23f" />
+        </g>
+      )}
+    </g>
+  ),
+
+  bedsideLamp: (c) => (
     <g>
       <rect x={140} y={196} width={40} height={36} rx={5} fill={WOOD} />
       <rect x={148} y={206} width={24} height={9} rx={3} fill={WOOD_DARK} />
       <rect x={157} y={168} width={6} height={28} rx={3} fill="#8b84a8" />
-      <path d="M144,168 l8,-22 h16 l8,22 z" fill="#ffd23f" />
-      <ellipse cx={160} cy={172} rx={26} ry={9} fill="#ffe89a" opacity={0.35} />
+      <path d="M144,168 l8,-22 h16 l8,22 z" fill={c.on ? "#ffd23f" : "#9aa2c0"} />
+      {c.on && <ellipse cx={160} cy={172} rx={26} ry={9} fill="#ffe89a" opacity={0.35} />}
     </g>
   ),
 
@@ -378,4 +823,23 @@ export const FURNITURE: Record<string, FurnitureRender> = {
       <ellipse cx={170} cy={296} rx={70} ry={20} fill="#66e6cf" />
     </g>
   ),
+
+  // ---------------- market ----------------
+  fruitStall: () => stall(6, "#ff4d7e", STALL_STOCK.fruitStall),
+  vegStall: () => stall(104, "#5ed64a", STALL_STOCK.vegStall),
+  bakeryStall: () => stall(202, "#ff9040", STALL_STOCK.bakeryStall),
+  dairyStall: () => stall(300, "#3aa0ff", STALL_STOCK.dairyStall),
 };
+
+/**
+ * One way in for the room to draw a piece: look it up, hand it its own state, and mirror it if
+ * it is a flippable piece standing the other way round.
+ */
+export function renderFurniture(id: string, ctx: FurnitureCtx): ReactElement | null {
+  const render = FURNITURE[id];
+  if (!render) return null;
+  const art = render(ctx);
+  const axis = FLIP_AXIS[id];
+  if (axis === undefined || ctx.facing % 2 === 0) return art;
+  return <g transform={"translate(" + axis * 2 + " 0) scale(-1 1)"}>{art}</g>;
+}

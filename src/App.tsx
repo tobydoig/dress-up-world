@@ -1,12 +1,29 @@
 import { useEffect, useState } from "react";
 import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
+import { capacityOf } from "./explore/furniture";
 import { DEFAULT_LOOK, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
-import { AVATAR_HOME, loadSave, newId, persist, type AvatarPose, type GameSave } from "./lib/storage";
+import {
+  AVATAR_HOME,
+  BASKET_LIMIT,
+  TIME_ORDER,
+  loadSave,
+  newId,
+  persist,
+  placeFurniture,
+  type AvatarPose,
+  type GameSave,
+  type PlacedFurniture,
+} from "./lib/storage";
 import { isMuted, setMuted } from "./lib/sound";
 
 type Mode = "design" | "explore";
+
+/** Drop one entry by position, so two of the same thing in a basket stay distinguishable. */
+function removeAt<T>(list: T[], index: number): T[] {
+  return [...list.slice(0, index), ...list.slice(index + 1)];
+}
 
 export function App() {
   const [save, setSave] = useState<GameSave>(() => loadSave());
@@ -93,7 +110,7 @@ export function App() {
       items: room.items.some((i) => i.id === furnitureId)
         ? room.items.filter((i) => i.id !== furnitureId)
         // New pieces land where they were authored, which is a sensible spot by construction.
-        : [...room.items, { id: furnitureId, dx: 0, dy: 0 }],
+        : [...room.items, placeFurniture(furnitureId)],
     }));
   }
 
@@ -104,8 +121,31 @@ export function App() {
     }));
   }
 
-  function moveAvatar(x: number, y: number, pose?: AvatarPose) {
-    updateRoom((room) => ({ ...room, avatarX: x, avatarY: y, avatarPose: pose ?? room.avatarPose }));
+  /** Everything else a piece remembers: which way it faces, its door, its bulb, its drawing. */
+  function updateFurniture(furnitureId: string, patch: Partial<PlacedFurniture>) {
+    updateRoom((room) => ({
+      ...room,
+      items: room.items.map((i) => (i.id === furnitureId ? { ...i, ...patch } : i)),
+    }));
+  }
+
+  function removeFurniture(furnitureId: string) {
+    updateRoom((room) => ({ ...room, items: room.items.filter((i) => i.id !== furnitureId) }));
+  }
+
+  /**
+   * `settle` is only passed when the character has finished moving and it has been decided
+   * what they have landed on. Leaving it out — which is what every frame of a drag does —
+   * moves them without disturbing what they are sitting on.
+   */
+  function moveAvatar(x: number, y: number, settle?: { pose: AvatarPose; seat: string | null }) {
+    updateRoom((room) => ({
+      ...room,
+      avatarX: x,
+      avatarY: y,
+      avatarPose: settle ? settle.pose : room.avatarPose,
+      avatarSeat: settle ? settle.seat : room.avatarSeat,
+    }));
   }
 
   /** Put everything back where it started, for when the room gets into a state. */
@@ -115,7 +155,81 @@ export function App() {
       avatarX: AVATAR_HOME.x,
       avatarY: AVATAR_HOME.y,
       avatarPose: "stand",
+      avatarSeat: null,
     }));
+  }
+
+  function cycleTime() {
+    setSave((prev) => ({
+      ...prev,
+      timeOfDay: TIME_ORDER[(TIME_ORDER.indexOf(prev.timeOfDay) + 1) % TIME_ORDER.length],
+    }));
+  }
+
+  function buyThing(thingId: string) {
+    setSave((prev) =>
+      prev.basket.length >= BASKET_LIMIT ? prev : { ...prev, basket: [...prev.basket, thingId] }
+    );
+  }
+
+  function eatThing(index: number) {
+    setSave((prev) =>
+      prev.basket[index] === undefined ? prev : { ...prev, basket: removeAt(prev.basket, index) }
+    );
+  }
+
+  /** Basket into a cupboard. Both halves move in one update so nothing can be duplicated. */
+  function storeThing(furnitureId: string, index: number) {
+    setSave((prev) => {
+      const thingId = prev.basket[index];
+      const room = prev.rooms[prev.lastRoom];
+      const item = room.items.find((i) => i.id === furnitureId);
+      if (thingId === undefined || !item || item.stored.length >= capacityOf(furnitureId)) return prev;
+      return {
+        ...prev,
+        basket: removeAt(prev.basket, index),
+        rooms: {
+          ...prev.rooms,
+          [prev.lastRoom]: {
+            ...room,
+            items: room.items.map((i) =>
+              i.id === furnitureId ? { ...i, stored: [...i.stored, thingId] } : i
+            ),
+          },
+        },
+      };
+    });
+  }
+
+  function takeOutThing(furnitureId: string, index: number) {
+    setSave((prev) => {
+      const room = prev.rooms[prev.lastRoom];
+      const item = room.items.find((i) => i.id === furnitureId);
+      const thingId = item?.stored[index];
+      if (!item || thingId === undefined || prev.basket.length >= BASKET_LIMIT) return prev;
+      return {
+        ...prev,
+        basket: [...prev.basket, thingId],
+        rooms: {
+          ...prev.rooms,
+          [prev.lastRoom]: {
+            ...room,
+            items: room.items.map((i) =>
+              i.id === furnitureId ? { ...i, stored: removeAt(i.stored, index) } : i
+            ),
+          },
+        },
+      };
+    });
+  }
+
+  function cookThings(indexA: number, indexB: number, dishId: string) {
+    setSave((prev) => {
+      const [lo, hi] = indexA < indexB ? [indexA, indexB] : [indexB, indexA];
+      if (prev.basket[lo] === undefined || prev.basket[hi] === undefined) return prev;
+      // The higher index goes first, or removing the lower one would shift it out from under us.
+      return { ...prev, basket: [...removeAt(removeAt(prev.basket, hi), lo), dishId] };
+    });
   }
 
   return (
@@ -137,11 +251,21 @@ export function App() {
           look={activeLook}
           roomId={save.lastRoom}
           room={save.rooms[save.lastRoom]}
+          basket={save.basket}
+          timeOfDay={save.timeOfDay}
           onRoomChange={changeRoom}
           onToggleFurniture={toggleFurniture}
           onMoveFurniture={moveFurniture}
+          onUpdateFurniture={updateFurniture}
+          onRemoveFurniture={removeFurniture}
           onMoveAvatar={moveAvatar}
           onTidyUp={tidyUp}
+          onCycleTime={cycleTime}
+          onBuy={buyThing}
+          onEat={eatThing}
+          onStore={storeThing}
+          onTakeOut={takeOutThing}
+          onCook={cookThings}
           characters={save.characters}
           activeId={save.activeId}
           onSwitchCharacter={switchCharacter}

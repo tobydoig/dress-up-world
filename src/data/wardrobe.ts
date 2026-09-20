@@ -13,6 +13,7 @@ export interface AvatarLook {
   topId: string | null;
   topColour: string;
   motifId: string | null;
+  motifColour: string;
   bottomId: string | null;
   bottomColour: string;
   shoesId: string | null;
@@ -93,6 +94,9 @@ export const CATEGORIES: CategoryDef[] = [
     palette: FABRIC_COLOURS,
     items: [
       { id: "tshirt", name: "T-shirt" },
+      { id: "blouse", name: "Blouse" },
+      { id: "shirtTie", name: "Shirt & tie" },
+      { id: "jacket", name: "Suit jacket" },
       { id: "hoodie", name: "Hoodie" },
       { id: "stripes", name: "Stripes" },
       { id: "tank", name: "Vest top" },
@@ -108,7 +112,10 @@ export const CATEGORIES: CategoryDef[] = [
     palette: FABRIC_COLOURS,
     items: [
       { id: "jeans", name: "Jeans" },
+      { id: "trousers", name: "Trousers" },
       { id: "skirt", name: "Skirt" },
+      { id: "pleatedSkirt", name: "Pleated skirt" },
+      { id: "pencilSkirt", name: "Smart skirt" },
       { id: "shorts", name: "Shorts" },
       { id: "leggings", name: "Leggings" },
     ],
@@ -130,11 +137,22 @@ export const CATEGORIES: CategoryDef[] = [
     label: "Picture",
     icon: "⭐",
     allowNone: true,
+    // The rainbow is the one picture that keeps its own colours — it has no single colour to
+    // change without stopping being a rainbow.
+    palette: FABRIC_COLOURS,
     items: [
       { id: "heart", name: "Heart" },
       { id: "star", name: "Star" },
       { id: "rainbow", name: "Rainbow" },
       { id: "flower", name: "Flower" },
+      { id: "butterfly", name: "Butterfly" },
+      { id: "cat", name: "Cat" },
+      { id: "sun", name: "Sun" },
+      { id: "moon", name: "Moon" },
+      { id: "cloud", name: "Cloud" },
+      { id: "lightning", name: "Lightning" },
+      { id: "iceCream", name: "Ice cream" },
+      { id: "music", name: "Music" },
     ],
   },
   {
@@ -259,6 +277,18 @@ export const CATEGORIES: CategoryDef[] = [
   },
 ];
 
+/**
+ * Before pictures had a colour of their own, each one was drawn in a fixed colour. A character
+ * saved back then is given the colour she was actually looking at, so loading this version
+ * doesn't quietly turn her yellow star pink.
+ */
+export const LEGACY_MOTIF_COLOUR: Record<string, string> = {
+  heart: "#ff4d7e",
+  star: "#ffd23f",
+  flower: "#fffdfa",
+  rainbow: "#ff4d7e",
+};
+
 export const DEFAULT_LOOK: AvatarLook = {
   skin: SKIN_TONES[1],
   hairId: "long",
@@ -272,6 +302,7 @@ export const DEFAULT_LOOK: AvatarLook = {
   topId: "tshirt",
   topColour: "#ff6fae",
   motifId: "heart",
+  motifColour: "#ff4d7e",
   bottomId: "jeans",
   bottomColour: "#3aa0ff",
   shoesId: "trainers",

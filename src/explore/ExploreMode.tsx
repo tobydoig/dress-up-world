@@ -1,18 +1,58 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from "react";
 import { Avatar, AvatarLayers } from "../avatar/Avatar";
 import {
+  CATALOGUE_CTX,
+  CONTAINERS,
   FLAT_ON_FLOOR,
   FLOATING,
-  FURNITURE,
+  LAMPS,
+  LIGHT_GLOW,
+  PAD,
   POPPED_BALLOONS,
   STACKABLE,
+  STALLS,
   WALL_MOUNTED,
-  deskLamp,
+  CONTAINER_DROP,
+  capacityOf,
+  facingCount,
+  isLit,
+  renderFurniture,
+  seatShift,
+  slotAt,
 } from "./furniture";
-import { FURNITURE_GROUPS, ROOMS, ROOM_ORDER, type RoomId } from "../data/rooms";
+import { FURNITURE_GROUPS, ROOMS, ROOM_ORDER, type RoomDef, type RoomId } from "../data/rooms";
+import { STALL_STOCK, THINGS, recipeFor } from "../data/things";
 import type { AvatarLook } from "../data/wardrobe";
-import type { AvatarPose, RoomState, SavedCharacter } from "../lib/storage";
-import { playBang, playPop, playSparkle, playTap, playWhoosh } from "../lib/sound";
+import {
+  BASKET_LIMIT,
+  type AvatarPose,
+  type PlacedFurniture,
+  type RoomState,
+  type SavedCharacter,
+  type Stroke,
+  type TimeOfDay,
+} from "../lib/storage";
+import {
+  playBang,
+  playChime,
+  playCoin,
+  playCreak,
+  playNom,
+  playPop,
+  playSparkle,
+  playTap,
+  playThud,
+  playTurn,
+  playWhoosh,
+  playYuck,
+} from "../lib/sound";
 
 /**
  * Room scene coordinates. Furniture was authored against a wall bottom of 232, so it all sits
@@ -52,10 +92,29 @@ const SEATS: Record<
   string,
   { zoneX: number; zoneY: number; x: number; y: number; pose: AvatarPose }
 > = {
-  chairLeft: { zoneX: 137, zoneY: 328, x: 137, y: 324, pose: "sit" },
-  chairRight: { zoneX: 275, zoneY: 328, x: 275, y: 324, pose: "sit" },
+  chairLeft: { zoneX: 124, zoneY: 328, x: 124, y: 324, pose: "sit" },
+  chairRight: { zoneX: 288, zoneY: 328, x: 288, y: 324, pose: "sit" },
   bed: { zoneX: 286, zoneY: 330, x: 369, y: 220, pose: "lie" },
 };
+
+/**
+ * Where you end up on a piece, and where you aim to land on it — both measured from the piece
+ * as it currently is, which means following it when it is dragged AND when it is turned. A
+ * chair seen side on has its seat off to one side of the back post; turned to face you, the
+ * seat is centred, and a sitter left at the old spot ends up beside the chair rather than on it.
+ */
+function seatPlace(item: PlacedFurniture): { x: number; y: number; pose: AvatarPose } | null {
+  const seat = SEATS[item.id];
+  if (!seat) return null;
+  const shift = seatShift(item.id, item.facing);
+  return { x: seat.x + item.dx + shift, y: seat.y + item.dy, pose: seat.pose };
+}
+
+function seatZone(item: PlacedFurniture): { x: number; y: number } | null {
+  const seat = SEATS[item.id];
+  if (!seat) return null;
+  return { x: seat.zoneX + item.dx + seatShift(item.id, item.facing), y: seat.zoneY + item.dy };
+}
 
 /** How close the character has to be dropped for it to count as sitting on something. */
 const SEAT_SNAP = 78;
@@ -63,7 +122,75 @@ const SEAT_SNAP = 78;
 /** How long a popped balloon stays popped. */
 const REINFLATE_MS = 2200;
 
+/** How long "Yum!" hangs in the air after something is eaten. */
+const REACTION_MS = 1100;
+
+/** How long the mouth keeps working after a mouthful. */
+const CHEW_MS = 1500;
+
+/**
+ * How dark the whole scene goes. Day adds nothing at all, so the rooms look exactly as they
+ * did before anyone thought about time of day.
+ */
+const TINT: Record<TimeOfDay, { colour: string; opacity: number }> = {
+  day: { colour: "#000000", opacity: 0 },
+  dusk: { colour: "#3a2a6b", opacity: 0.28 },
+  night: { colour: "#0d1240", opacity: 0.54 },
+};
+
+/**
+ * Icon only. Spelling out "Teatime" next to the character picker and the dress-up button was
+ * enough to wrap the room name onto a second line on a phone, which is the size this is played
+ * at. The name goes in the label instead.
+ */
+const TIME_ICON: Record<TimeOfDay, string> = {
+  day: "☀️",
+  dusk: "🌆",
+  night: "🌙",
+};
+
+const TIME_NAME: Record<TimeOfDay, string> = {
+  day: "Daytime",
+  dusk: "Teatime",
+  night: "Night",
+};
+
+/** What's behind the window, which is the quickest way to tell what time it is. */
+const SKY: Record<TimeOfDay, string> = {
+  day: "#bfe8ff",
+  dusk: "#ffb37a",
+  night: "#28306b",
+};
+
+/** Fixed so the stars don't jump about every time the room re-renders. */
+const STARS: Array<[number, number, number]> = [
+  [46, 34, 2.2], [92, 58, 1.6], [128, 26, 2], [260, 40, 1.8],
+  [306, 22, 2.4], [352, 52, 1.6], [196, 18, 2], [22, 72, 1.7],
+];
+
 type DragTarget = { kind: "avatar" } | { kind: "furniture"; id: string };
+
+/**
+ * Which panel is showing. Cupboards deliberately don't have one: you open them and drag things
+ * in, which is a great deal more fun than picking from a list.
+ */
+type Tray = { kind: "stall"; id: string } | { kind: "cooker"; id: string };
+
+/** A thing being carried by a fingertip, and where it was picked up from. */
+type ThingSource =
+  | { kind: "basket"; index: number }
+  | { kind: "container"; id: string; index: number };
+
+interface ThingDrag {
+  thingId: string;
+  from: ThingSource;
+  startX: number;
+  startY: number;
+  /** The open container currently under the finger, if any. */
+  over: string | null;
+  move: (e: PointerEvent) => void;
+  end: (e?: PointerEvent) => void;
+}
 
 interface DragState {
   target: DragTarget;
@@ -77,6 +204,12 @@ interface DragState {
   /** Client pixels per room unit, so pointer movement maps onto the scene. */
   scale: number;
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  /**
+   * Whether the finger is currently over the bin. Kept on the drag rather than in React state
+   * because the drop handler needs the value as it is NOW, not as it was when the handler was
+   * created.
+   */
+  overBin: boolean;
   /** Kept so exactly these listeners can be detached again when the drag ends. */
   move: (e: PointerEvent) => void;
   end: () => void;
@@ -86,15 +219,107 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function rgba(hex: string, alpha: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + alpha + ")";
+}
+
+/** A thing's own artwork, sized to fit a square button or slot. */
+function ThingArt({ id }: { id: string }): ReactElement | null {
+  const thing = THINGS[id];
+  if (!thing) return null;
+  return (
+    <svg viewBox="-22 -22 44 44" className="thing-svg" role="img" aria-label={thing.name}>
+      {thing.art()}
+    </svg>
+  );
+}
+
+/** The window, or — outdoors — the sky, both of which change with the time of day. */
+function RoomFittings({ room, time }: { room: RoomDef; time: TimeOfDay }): ReactElement {
+  if (room.outdoor) {
+    return (
+      <g>
+        {time === "night" ? (
+          <g>
+            {STARS.map(([x, y, r]) => (
+              <circle key={x + ":" + y} cx={x} cy={y} r={r} fill="#fffdfa" opacity={0.9} />
+            ))}
+            <circle cx={324} cy={62} r={22} fill="#fff3c4" />
+            <circle cx={314} cy={54} r={19} fill={room.wall} />
+          </g>
+        ) : (
+          <g>
+            {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+              <rect
+                key={a}
+                x={-3}
+                y={-34}
+                width={6}
+                height={11}
+                rx={3}
+                fill={time === "dusk" ? "#ff9040" : "#ffe067"}
+                transform={"translate(324 62) rotate(" + a + ")"}
+              />
+            ))}
+            <circle cx={324} cy={62} r={21} fill={time === "dusk" ? "#ff7a3f" : "#ffd23f"} />
+          </g>
+        )}
+        {([
+          [70, 60, 1],
+          [188, 36, 0.8],
+          [252, 86, 0.6],
+        ] as Array<[number, number, number]>).map(([x, y, s]) => (
+          <g key={x} transform={"translate(" + x + " " + y + ") scale(" + s + ")"} opacity={0.85}>
+            <circle cx={-16} cy={4} r={11} fill="#fffdfa" />
+            <circle cx={0} cy={-3} r={15} fill="#fffdfa" />
+            <circle cx={16} cy={5} r={10} fill="#fffdfa" />
+            <rect x={-22} y={4} width={44} height={11} rx={5.5} fill="#fffdfa" />
+          </g>
+        ))}
+      </g>
+    );
+  }
+
+  return (
+    <g>
+      <rect x={160} y={74} width={80} height={68} rx={7} fill={SKY[time]} stroke={room.wallTrim} strokeWidth={7} />
+      <path d="M200,76 v64 M162,108 h76" stroke={room.wallTrim} strokeWidth={5} />
+      {time === "night" ? (
+        <g>
+          <circle cx={222} cy={92} r={9} fill="#fff3c4" />
+          <circle cx={218} cy={88} r={7.5} fill={SKY.night} />
+          <circle cx={176} cy={90} r={1.8} fill="#fffdfa" />
+          <circle cx={186} cy={124} r={1.6} fill="#fffdfa" />
+          <circle cx={226} cy={126} r={1.7} fill="#fffdfa" />
+        </g>
+      ) : (
+        <circle cx={222} cy={92} r={9} fill={time === "dusk" ? "#ff7a3f" : "#fff3b0"} />
+      )}
+      <path d={"M0,44 h" + ROOM_W} stroke={room.wallTrim} strokeWidth={6} opacity={0.65} />
+    </g>
+  );
+}
+
 export function ExploreMode({
   look,
   roomId,
   room: roomState,
+  basket,
+  timeOfDay,
   onRoomChange,
   onToggleFurniture,
   onMoveFurniture,
+  onUpdateFurniture,
+  onRemoveFurniture,
   onMoveAvatar,
   onTidyUp,
+  onCycleTime,
+  onBuy,
+  onEat,
+  onStore,
+  onTakeOut,
+  onCook,
   characters,
   activeId,
   onSwitchCharacter,
@@ -104,11 +329,25 @@ export function ExploreMode({
   look: AvatarLook | null;
   roomId: RoomId;
   room: RoomState;
+  basket: string[];
+  timeOfDay: TimeOfDay;
   onRoomChange: (next: RoomId) => void;
   onToggleFurniture: (furnitureId: string) => void;
   onMoveFurniture: (furnitureId: string, dx: number, dy: number) => void;
-  onMoveAvatar: (x: number, y: number, pose?: AvatarPose) => void;
+  onUpdateFurniture: (furnitureId: string, patch: Partial<PlacedFurniture>) => void;
+  onRemoveFurniture: (furnitureId: string) => void;
+  onMoveAvatar: (
+    x: number,
+    y: number,
+    settle?: { pose: AvatarPose; seat: string | null }
+  ) => void;
   onTidyUp: () => void;
+  onCycleTime: () => void;
+  onBuy: (thingId: string) => void;
+  onEat: (index: number) => void;
+  onStore: (furnitureId: string, index: number) => void;
+  onTakeOut: (furnitureId: string, index: number) => void;
+  onCook: (indexA: number, indexB: number, dishId: string) => void;
   characters: SavedCharacter[];
   activeId: string | null;
   onSwitchCharacter: (id: string) => void;
@@ -118,12 +357,29 @@ export function ExploreMode({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [poppedAt, setPoppedAt] = useState<number | null>(null);
   const [castOpen, setCastOpen] = useState(false);
-  const [lampOn, setLampOn] = useState(true);
+  const [tray, setTray] = useState<Tray | null>(null);
+  /** Which basket slots are waiting in the pot. Indices, so two of the same thing still work. */
+  const [pot, setPot] = useState<number[]>([]);
+  const [padId, setPadId] = useState<string | null>(null);
+  const [reaction, setReaction] = useState<string | null>(null);
+  const [chewing, setChewing] = useState(false);
+  /** A thing being carried on a fingertip, in client pixels, for drawing it under the finger. */
+  const [held, setHeld] = useState<{
+    thingId: string;
+    /** Which basket slot it came out of, so only that one dims — not every apple she owns. */
+    index: number | null;
+    x: number;
+    y: number;
+    over: string | null;
+  } | null>(null);
+  const [overBin, setOverBin] = useState(false);
   /** When the sheet opened, to ignore the click that opened it arriving on the new backdrop. */
   const sheetOpenedAt = useRef(0);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const binRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const thingDragRef = useRef<ThingDrag | null>(null);
   /**
    * The drag's move/end handlers are closures made when the drag starts, so reading roomState
    * directly from them sees where things were BEFORE the drag. This ref always holds the
@@ -131,35 +387,24 @@ export function ExploreMode({
    */
   const roomStateRef = useRef(roomState);
   roomStateRef.current = roomState;
+  // Same reason: a drop handler made when the drag started would otherwise read the basket as
+  // it was before anything moved.
+  const basketRef = useRef(basket);
+  basketRef.current = basket;
 
   const room = ROOMS[roomId];
-
-  /**
-   * The chair the character is sitting on, drawn after them so its back and legs overlap and
-   * they read as being IN it rather than stuck on top. Only for sitting: you lie ON a bed, so
-   * drawing the bed in front would bury them (and swallow the tap that gets them up again).
-   */
-  const occupiedId =
-    roomState.avatarPose !== "sit"
-      ? null
-      : roomState.items.find((item) => {
-          const seat = SEATS[item.id];
-          if (!seat) return false;
-          return (
-            Math.abs(seat.x + item.dx - roomState.avatarX) < 2 &&
-            Math.abs(seat.y + item.dy - roomState.avatarY) < 2
-          );
-        })?.id ?? null;
-
-  const occupied = occupiedId ? roomState.items.find((i) => i.id === occupiedId) : undefined;
 
   const index = ROOM_ORDER.indexOf(roomId);
   const prev = index > 0 ? ROOM_ORDER[index - 1] : null;
   const next = index < ROOM_ORDER.length - 1 ? ROOM_ORDER[index + 1] : null;
 
+  const trayItem = tray ? roomState.items.find((i) => i.id === tray.id) : undefined;
+  const padItem = padId ? roomState.items.find((i) => i.id === padId) : undefined;
+
   function go(to: RoomId | null) {
     if (!to) return;
     playWhoosh();
+    closeTray();
     onRoomChange(to);
   }
 
@@ -178,7 +423,34 @@ export function ExploreMode({
     window.removeEventListener("pointercancel", drag.end);
   }
 
-  useEffect(() => releaseListeners, []);
+  function releaseThingListeners() {
+    const drag = thingDragRef.current;
+    if (!drag) return;
+    window.removeEventListener("pointermove", drag.move);
+    window.removeEventListener("pointerup", drag.end);
+    window.removeEventListener("pointercancel", drag.end);
+  }
+
+  useEffect(
+    () => () => {
+      releaseListeners();
+      releaseThingListeners();
+    },
+    []
+  );
+
+  function closeTray() {
+    if (tray?.kind === "cooker") onUpdateFurniture(tray.id, { open: false });
+    setTray(null);
+    setPot([]);
+  }
+
+  function isOverBin(ev: PointerEvent): boolean {
+    const el = binRef.current;
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+  }
 
   function startDrag(e: ReactPointerEvent<SVGGElement>, target: DragTarget) {
     // Deliberately no preventDefault: cancelling the pointerdown of a touch made Chromium
@@ -258,8 +530,25 @@ export function ExploreMode({
       const x = clamp(drag.originX + (ev.clientX - drag.clientX) / drag.scale, drag.bounds.minX, drag.bounds.maxX);
       const y = clamp(drag.originY + (ev.clientY - drag.clientY) / drag.scale, drag.bounds.minY, drag.bounds.maxY);
 
-      if (drag.target.kind === "avatar") onMoveAvatar(x, y);
-      else onMoveFurniture(drag.target.id, x, y);
+      if (drag.target.kind === "avatar") {
+        onMoveAvatar(x, y);
+      } else {
+        const movedId = drag.target.id;
+        onMoveFurniture(movedId, x, y);
+        // Someone sitting on this piece goes with it, rather than being left hovering where
+        // the chair used to be.
+        const seated = roomStateRef.current;
+        if (seated.avatarSeat === movedId) {
+          const item = seated.items.find((i) => i.id === movedId);
+          const place = item && seatPlace({ ...item, dx: x, dy: y });
+          if (place) onMoveAvatar(place.x, place.y);
+        }
+        const over = isOverBin(ev);
+        if (over !== drag.overBin) {
+          drag.overBin = over;
+          setOverBin(over);
+        }
+      }
     };
 
     // Deliberately not matched against the starting pointerId: if the matching pointerup is
@@ -271,12 +560,20 @@ export function ExploreMode({
       releaseListeners();
       dragRef.current = null;
       setDraggingKey(null);
+      setOverBin(false);
 
       // A finger wobbles; 5px counted honest taps as drags, which re-seated a character the
       // moment you tried to tap them off a chair.
       const travelled = ev ? Math.hypot(ev.clientX - drag.clientX, ev.clientY - drag.clientY) : 0;
       if (travelled < 11) {
         onTap(drag.target);
+        return;
+      }
+
+      // Dropped on the bin: the piece goes away. Only ever reached after a real drag, so a tap
+      // on something that happens to sit under the bin can't delete it by accident.
+      if (drag.target.kind === "furniture" && drag.overBin) {
+        binFurniture(drag.target.id);
         return;
       }
 
@@ -293,6 +590,7 @@ export function ExploreMode({
       originY,
       scale,
       bounds,
+      overBin: false,
       move,
       end,
     };
@@ -305,13 +603,25 @@ export function ExploreMode({
     playTap();
   }
 
+  /** Throw a piece away, standing the character up first if they were sitting on it. */
+  function binFurniture(id: string) {
+    const current = roomStateRef.current;
+    if (current.avatarSeat === id) {
+      onMoveAvatar(current.avatarX, current.avatarY, { pose: "stand", seat: null });
+    }
+    if (tray?.id === id) closeTray();
+    if (padId === id) setPadId(null);
+    onRemoveFurniture(id);
+    playThud();
+  }
+
   /** A press that never really moved: treat it as a tap on whatever was pressed. */
   function onTap(target: DragTarget) {
     const current = roomStateRef.current;
     if (target.kind === "avatar") {
       // Tap the character to get them back up again.
       if (current.avatarPose !== "stand") {
-        onMoveAvatar(current.avatarX, current.avatarY - 18, "stand");
+        onMoveAvatar(current.avatarX, current.avatarY - 18, { pose: "stand", seat: null });
         playSparkle();
       } else {
         playPop();
@@ -319,17 +629,63 @@ export function ExploreMode({
       return;
     }
 
-    if (target.id === "deskLamp") {
-      setLampOn((v) => !v);
+    const id = target.id;
+    const item = current.items.find((i) => i.id === id);
+    if (!item) return;
+
+    // Each kind of thing does its own thing when tapped, and only one of them can apply: a
+    // cupboard opens, a lamp lights, a chair turns.
+    if (id === "pictureFrame") {
+      setPadId(id);
       playTap();
       return;
     }
 
-    if (target.id === "balloons") {
+    if (CONTAINERS.has(id)) {
+      onUpdateFurniture(id, { open: !item.open });
+      playCreak();
+      return;
+    }
+
+    if (STALLS.has(id)) {
+      setTray({ kind: "stall", id });
+      playTap();
+      return;
+    }
+
+    if (id === "cooker") {
+      const opening = !item.open;
+      onUpdateFurniture(id, { open: opening });
+      setTray(opening ? { kind: "cooker", id } : null);
+      if (!opening) setPot([]);
+      playTap();
+      return;
+    }
+
+    if (LAMPS.has(id)) {
+      onUpdateFurniture(id, { on: !item.on });
+      playTap();
+      return;
+    }
+
+    if (id === "balloons") {
       if (poppedAt === null) {
         setPoppedAt(Date.now());
         playBang();
       }
+      return;
+    }
+
+    const turns = facingCount(id);
+    if (turns > 1) {
+      const facing = (item.facing + 1) % turns;
+      onUpdateFurniture(id, { facing });
+      // The seat moves when the chair turns, so whoever is on it has to move too.
+      if (current.avatarSeat === id) {
+        const place = seatPlace({ ...item, facing });
+        if (place) onMoveAvatar(place.x, place.y, { pose: place.pose, seat: id });
+      }
+      playTurn();
       return;
     }
 
@@ -343,33 +699,190 @@ export function ExploreMode({
     // Dragging someone who is already sitting or lying always frees them. Otherwise the snap
     // radius grabs them straight back onto the seat and there's no way off it.
     if (current.avatarPose !== "stand") {
-      onMoveAvatar(current.avatarX, current.avatarY, "stand");
+      onMoveAvatar(current.avatarX, current.avatarY, { pose: "stand", seat: null });
       playPop();
       return;
     }
 
-    let best: { x: number; y: number; pose: AvatarPose } | null = null;
+    let best: { id: string; x: number; y: number; pose: AvatarPose } | null = null;
     let bestDistance = SEAT_SNAP;
 
     for (const item of current.items) {
-      const seat = SEATS[item.id];
-      if (!seat) continue;
-      const distance = Math.hypot(
-        current.avatarX - (seat.zoneX + item.dx),
-        current.avatarY - (seat.zoneY + item.dy)
-      );
+      const zone = seatZone(item);
+      const place = seatPlace(item);
+      if (!zone || !place) continue;
+      const distance = Math.hypot(current.avatarX - zone.x, current.avatarY - zone.y);
       if (distance < bestDistance) {
         bestDistance = distance;
-        best = { x: seat.x + item.dx, y: seat.y + item.dy, pose: seat.pose };
+        best = { id: item.id, ...place };
       }
     }
 
     if (best) {
-      onMoveAvatar(best.x, best.y, best.pose);
+      onMoveAvatar(best.x, best.y, { pose: best.pose, seat: best.id });
       playSparkle();
-    } else if (current.avatarPose !== "stand") {
-      onMoveAvatar(current.avatarX, current.avatarY, "stand");
     }
+  }
+
+  /** Every container standing open in this room, which is what a thing can be dropped into. */
+  function openContainers(): PlacedFurniture[] {
+    return roomStateRef.current.items.filter((i) => i.open && CONTAINER_DROP[i.id]);
+  }
+
+  /** Client pixels to room coordinates. The scene is width-limited and anchored to the top. */
+  function toRoom(clientX: number, clientY: number): { x: number; y: number } | null {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return null;
+    const scale = rect.width / ROOM_W;
+    return { x: (clientX - rect.left) / scale, y: (clientY - rect.top) / scale };
+  }
+
+  /** Which open container the finger is over, if any. */
+  function containerUnder(clientX: number, clientY: number): string | null {
+    const at = toRoom(clientX, clientY);
+    if (!at) return null;
+    for (const item of openContainers()) {
+      const box = CONTAINER_DROP[item.id];
+      const x = box.x + item.dx;
+      const y = FURNITURE_DROP + box.y + item.dy;
+      if (at.x >= x && at.x <= x + box.w && at.y >= y && at.y <= y + box.h) return item.id;
+    }
+    return null;
+  }
+
+  /**
+   * Picking a thing up — out of the basket, or off a shelf inside an open cupboard. The same
+   * short-travel rule the furniture uses decides afterwards whether this was really a tap.
+   */
+  function startThingDrag(e: ReactPointerEvent<Element>, from: ThingSource, thingId: string) {
+    const move = (ev: PointerEvent) => {
+      const drag = thingDragRef.current;
+      if (!drag) return;
+      drag.over = containerUnder(ev.clientX, ev.clientY);
+      setHeld({
+        thingId: drag.thingId,
+        index: drag.from.kind === "basket" ? drag.from.index : null,
+        x: ev.clientX,
+        y: ev.clientY,
+        over: drag.over,
+      });
+    };
+
+    const end = (ev?: PointerEvent) => {
+      const drag = thingDragRef.current;
+      if (!drag) return;
+      releaseThingListeners();
+      thingDragRef.current = null;
+      setHeld(null);
+
+      const travelled = ev ? Math.hypot(ev.clientX - drag.startX, ev.clientY - drag.startY) : 0;
+      if (travelled < 11) {
+        if (drag.from.kind === "basket") tapBasket(drag.from.index);
+        else takeOut(drag.from.id, drag.from.index);
+        return;
+      }
+      dropThing(drag.from, drag.over);
+    };
+
+    thingDragRef.current = { thingId, from, startX: e.clientX, startY: e.clientY, over: null, move, end };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    setHeld({
+      thingId,
+      index: from.kind === "basket" ? from.index : null,
+      x: e.clientX,
+      y: e.clientY,
+      over: null,
+    });
+    playTap();
+  }
+
+  function dropThing(from: ThingSource, over: string | null) {
+    if (from.kind === "basket") {
+      // Let go over the room rather than over a cupboard: nothing happens, it stays in hand.
+      if (!over) return;
+      const item = roomStateRef.current.items.find((i) => i.id === over);
+      if (item) putIn(item, from.index);
+      return;
+    }
+    // Out of a cupboard: dropped anywhere but back where it came from, it goes in the basket.
+    if (over === from.id) return;
+    takeOut(from.id, from.index);
+  }
+
+  function putIn(item: PlacedFurniture, index: number) {
+    if (item.stored.length >= capacityOf(item.id)) {
+      setReaction("That's full!");
+      playYuck();
+      return;
+    }
+    onStore(item.id, index);
+    playCreak();
+  }
+
+  function takeOut(id: string, index: number) {
+    if (basketRef.current.length >= BASKET_LIMIT) {
+      setReaction("Your hands are full!");
+      playYuck();
+      return;
+    }
+    onTakeOut(id, index);
+    playPop();
+  }
+
+  function eat(index: number) {
+    const thing = THINGS[basketRef.current[index]];
+    if (!thing) return;
+    if (thing.taste === "yuck") {
+      setReaction("Yuck! Cook it first");
+      playYuck();
+      return;
+    }
+    setReaction("Yum!");
+    setChewing(true);
+    playNom();
+    onEat(index);
+  }
+
+  /** Tapping something in the basket: into the pot, into whatever is open, or into your mouth. */
+  function tapBasket(i: number) {
+    if (!basketRef.current[i]) return;
+
+    if (tray?.kind === "cooker") {
+      setPot((p) => (p.includes(i) ? p.filter((n) => n !== i) : p.length < 2 ? [...p, i] : p));
+      playTap();
+      return;
+    }
+
+    // With exactly one cupboard standing open, a tap obviously means "put it away". Dragging
+    // is the real gesture, but a small child shouldn't have to be accurate to tidy up. A full
+    // cupboard falls through to eating rather than refusing — dragging into it still says so.
+    const open = openContainers();
+    const room = open.find((c) => c.stored.length < capacityOf(c.id));
+    if (open.length === 1 && room) {
+      putIn(room, i);
+      return;
+    }
+
+    eat(i);
+  }
+
+  function cook() {
+    if (pot.length < 2) return;
+    const a = basket[pot[0]];
+    const b = basket[pot[1]];
+    const match = a && b ? recipeFor(a, b) : null;
+    if (!match) {
+      setReaction("Those two don't go together");
+      playYuck();
+      setPot([]);
+      return;
+    }
+    onCook(pot[0], pot[1], match.makes);
+    setPot([]);
+    setReaction("You made " + THINGS[match.makes].name.toLowerCase() + "!");
+    playChime();
   }
 
   // Balloons come back a couple of seconds after they're popped.
@@ -379,9 +892,33 @@ export function ExploreMode({
     return () => clearTimeout(timer);
   }, [poppedAt]);
 
+  useEffect(() => {
+    if (reaction === null) return;
+    const timer = setTimeout(() => setReaction(null), REACTION_MS);
+    return () => clearTimeout(timer);
+  }, [reaction]);
+
+  useEffect(() => {
+    if (!chewing) return;
+    const timer = setTimeout(() => setChewing(false), CHEW_MS);
+    return () => clearTimeout(timer);
+  }, [chewing]);
+
   const dragHandlers = (target: DragTarget) => ({
     onPointerDown: (e: ReactPointerEvent<SVGGElement>) => startDrag(e, target),
   });
+
+  const tint = TINT[timeOfDay];
+  const lit = timeOfDay !== "day" ? roomState.items.filter((i) => LIGHT_GLOW[i.id] && isLit(i.id, i)) : [];
+  /**
+   * The scene is anchored to the top of the stage and the stage below it is painted floor
+   * colour, so nightfall has to be laid over that background too — tinting only inside the
+   * viewBox left a brightly lit strip of floor along the bottom of the screen.
+   */
+  const stageBackground =
+    tint.opacity > 0
+      ? "linear-gradient(" + rgba(tint.colour, tint.opacity) + "," + rgba(tint.colour, tint.opacity) + "), " + room.floor
+      : room.floor;
 
   return (
     <div className="screen">
@@ -390,6 +927,16 @@ export function ExploreMode({
           {room.icon} {room.name}
         </h1>
         <div className="topbar-actions">
+          <button
+            className="chip-btn chip-ghost chip-icon"
+            aria-label={TIME_NAME[timeOfDay] + " — tap to change the time of day"}
+            onClick={() => {
+              onCycleTime();
+              playWhoosh();
+            }}
+          >
+            {TIME_ICON[timeOfDay]}
+          </button>
           <button
             className="chip-btn chip-ghost"
             aria-label="Choose who is here"
@@ -413,7 +960,7 @@ export function ExploreMode({
         </div>
       </header>
 
-      <div className="room-stage" style={{ background: room.floor }}>
+      <div className="room-stage" style={{ background: stageBackground }}>
         <div key={roomId} className="room-slide">
           <svg
             ref={svgRef}
@@ -423,45 +970,88 @@ export function ExploreMode({
             role="img"
             aria-label={room.name}
           >
+            <defs>
+              <radialGradient id="lamp-glow">
+                <stop offset="0%" stopColor="#fff0c0" stopOpacity={0.92} />
+                <stop offset="55%" stopColor="#ffd98a" stopOpacity={0.4} />
+                <stop offset="100%" stopColor="#ffd98a" stopOpacity={0} />
+              </radialGradient>
+            </defs>
+
             <rect x={0} y={0} width={ROOM_W} height={WALL_BOTTOM} fill={room.wall} />
             <rect x={0} y={WALL_BOTTOM} width={ROOM_W} height={ROOM_H - WALL_BOTTOM} fill={room.floor} />
             <rect x={0} y={WALL_BOTTOM - 8} width={ROOM_W} height={10} fill={room.wallTrim} />
-            {[70, 150, 230, 310].map((x) => (
-              <path
-                key={x}
-                d={"M" + x + "," + (WALL_BOTTOM + 2) + " L" + (x - 34) + "," + ROOM_H}
-                stroke={room.floorBoards}
-                strokeWidth={2.5}
-                opacity={0.7}
-              />
-            ))}
+            {room.outdoor
+              ? // Paving rather than boards, so the market reads as outside.
+                [0, 1, 2, 3].map((i) => (
+                  <path
+                    key={i}
+                    d={"M0," + (WALL_BOTTOM + 14 + i * 28) + " h" + ROOM_W}
+                    stroke={room.floorBoards}
+                    strokeWidth={2.5}
+                    opacity={0.6}
+                  />
+                ))
+              : [70, 150, 230, 310].map((x) => (
+                  <path
+                    key={x}
+                    d={"M" + x + "," + (WALL_BOTTOM + 2) + " L" + (x - 34) + "," + ROOM_H}
+                    stroke={room.floorBoards}
+                    strokeWidth={2.5}
+                    opacity={0.7}
+                  />
+                ))}
 
             {/* Wall fittings, so every room has something on it even with nothing placed. */}
-            <g>
-              <rect x={160} y={74} width={80} height={68} rx={7} fill="#bfe8ff" stroke={room.wallTrim} strokeWidth={7} />
-              <path d="M200,76 v64 M162,108 h76" stroke={room.wallTrim} strokeWidth={5} />
-              <circle cx={222} cy={92} r={9} fill="#fff3b0" />
-              <path d={"M0,44 h" + ROOM_W} stroke={room.wallTrim} strokeWidth={6} opacity={0.65} />
-            </g>
+            <RoomFittings room={room} time={timeOfDay} />
 
             {roomState.items.map((item) => {
-              const render = item.id === "deskLamp" ? () => deskLamp(lampOn) : FURNITURE[item.id];
-              if (!render) return null;
-              if (item.id === occupiedId) return null;
+              const art =
+                item.id === "balloons" && poppedAt !== null
+                  ? POPPED_BALLOONS()
+                  : renderFurniture(item.id, item);
+              if (!art) return null;
               return (
-                // The positioning transform and the pop animation live on separate groups: a
-                // CSS animation on `transform` would otherwise override the attribute and snap
-                // the piece back to where it was authored.
-                <g
-                  key={item.id}
-                  className={"draggable" + (draggingKey === item.id ? " is-dragging" : "")}
-                  transform={"translate(" + item.dx + " " + (FURNITURE_DROP + item.dy) + ")"}
-                  {...dragHandlers({ kind: "furniture", id: item.id })}
-                >
-                  <g className="furniture-in">
-                    {item.id === "balloons" && poppedAt !== null ? POPPED_BALLOONS() : render()}
+                <Fragment key={item.id}>
+                  {/* The positioning transform and the pop animation live on separate groups: a
+                      CSS animation on `transform` would otherwise override the attribute and
+                      snap the piece back to where it was authored. */}
+                  <g
+                    className={"draggable" + (draggingKey === item.id ? " is-dragging" : "")}
+                    transform={"translate(" + item.dx + " " + (FURNITURE_DROP + item.dy) + ")"}
+                    {...dragHandlers({ kind: "furniture", id: item.id })}
+                  >
+                    <g className="furniture-in">{art}</g>
                   </g>
-                </g>
+
+                  {/* What is inside an open container is a layer of its own rather than part of
+                      the piece: anything drawn inside the furniture's group would drag the
+                      furniture instead of itself. */}
+                  {item.open &&
+                    item.stored.map((thingId, i) => {
+                      const slot = slotAt(item.id, i);
+                      const thing = THINGS[thingId];
+                      if (!slot || !thing) return null;
+                      return (
+                        <g
+                          key={thingId + "-" + i}
+                          className="draggable"
+                          transform={
+                            "translate(" + (item.dx + slot.x) + " " +
+                            (FURNITURE_DROP + item.dy + slot.y) + ") scale(" + slot.scale + ")"
+                          }
+                          onPointerDown={(e) =>
+                            startThingDrag(e, { kind: "container", id: item.id, index: i }, thingId)
+                          }
+                        >
+                          {/* A pad the size of the slot — a carrot drawn this small is far too
+                              little to aim a finger at. */}
+                          <rect x={-24} y={-24} width={48} height={48} fill="transparent" />
+                          {thing.art()}
+                        </g>
+                      );
+                    })}
+                </Fragment>
               );
             })}
 
@@ -475,17 +1065,62 @@ export function ExploreMode({
                 }
                 {...dragHandlers({ kind: "avatar" })}
               >
-                <AvatarLayers look={look} uid={"room-" + roomId} pose={roomState.avatarPose} />
+                <AvatarLayers
+                  look={look}
+                  uid={"room-" + roomId}
+                  pose={roomState.avatarPose}
+                  chewing={chewing}
+                />
               </g>
             )}
 
-            {occupied && FURNITURE[occupied.id] && (
-              <g
-                className={"draggable" + (draggingKey === occupied.id ? " is-dragging" : "")}
-                transform={"translate(" + occupied.dx + " " + (FURNITURE_DROP + occupied.dy) + ")"}
-                {...dragHandlers({ kind: "furniture", id: occupied.id })}
-              >
-                <g className="furniture-in">{FURNITURE[occupied.id]()}</g>
+            {/* Where the thing on the end of her finger can be let go. */}
+            {held &&
+              roomState.items
+                .filter((i) => i.open && CONTAINER_DROP[i.id])
+                .map((item) => {
+                  const box = CONTAINER_DROP[item.id];
+                  return (
+                    <rect
+                      key={item.id}
+                      className={"drop-zone" + (held.over === item.id ? " is-over" : "")}
+                      x={box.x + item.dx}
+                      y={FURNITURE_DROP + box.y + item.dy}
+                      width={box.w}
+                      height={box.h}
+                      rx={8}
+                      pointerEvents="none"
+                    />
+                  );
+                })}
+
+            {/* Nightfall goes over the whole scene, and the lamps then punch back through it. */}
+            {tint.opacity > 0 && (
+              <rect
+                x={0}
+                y={0}
+                width={ROOM_W}
+                height={ROOM_H}
+                fill={tint.colour}
+                opacity={tint.opacity}
+                pointerEvents="none"
+              />
+            )}
+            {lit.length > 0 && (
+              <g style={{ mixBlendMode: "screen" }} pointerEvents="none">
+                {lit.map((item) => {
+                  const glow = LIGHT_GLOW[item.id];
+                  return (
+                    <ellipse
+                      key={item.id}
+                      cx={glow.cx + item.dx}
+                      cy={FURNITURE_DROP + glow.cy + item.dy}
+                      rx={glow.rx}
+                      ry={glow.ry}
+                      fill="url(#lamp-glow)"
+                    />
+                  );
+                })}
               </g>
             )}
           </svg>
@@ -507,6 +1142,125 @@ export function ExploreMode({
         >
           ›
         </button>
+
+        {/* Only while something is being dragged, so it never sits in the way of the room. */}
+        {draggingKey !== null && draggingKey !== "avatar" && (
+          <div ref={binRef} className={"bin" + (overBin ? " is-over" : "")} aria-hidden="true">
+            <span className="bin-icon">🗑️</span>
+            <span className="bin-label">Drop to remove</span>
+          </div>
+        )}
+
+        {reaction && <div className="reaction">{reaction}</div>}
+
+        {held && (
+          <div className="held-thing" style={{ left: held.x, top: held.y }} aria-hidden="true">
+            <ThingArt id={held.thingId} />
+          </div>
+        )}
+
+        {basket.length > 0 && tray === null && (
+          <div className="basket">
+            <span className="basket-icon" aria-hidden="true">🧺</span>
+            <div className="basket-items">
+              {basket.map((thingId, i) => (
+                <button
+                  key={thingId + "-" + i}
+                  className={"basket-item" + (held?.index === i ? " is-held" : "")}
+                  aria-label={THINGS[thingId]?.name ?? thingId}
+                  // Pointer down rather than click: the same press has to be able to become a
+                  // drag into a cupboard, and a click firing as well would act twice.
+                  onPointerDown={(e) => startThingDrag(e, { kind: "basket", index: i }, thingId)}
+                >
+                  <ThingArt id={thingId} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+      {tray && trayItem && (
+          <div className="tray">
+            <div className="tray-head">
+              <strong>{trayTitle(tray)}</strong>
+              <button
+                className="sheet-close"
+                aria-label="Close"
+                onClick={() => {
+                  closeTray();
+                  playTap();
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {tray.kind === "stall" && (
+              <div className="tray-row">
+                {(STALL_STOCK[tray.id] ?? []).map((thingId) => (
+                  <button
+                    key={thingId}
+                    className="tray-item"
+                    disabled={basket.length >= BASKET_LIMIT}
+                    onClick={() => {
+                      onBuy(thingId);
+                      playCoin();
+                    }}
+                  >
+                    <ThingArt id={thingId} />
+                    <span className="tray-name">{THINGS[thingId].name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {tray.kind === "cooker" && (
+              <>
+                <p className="tray-hint">Pick two things from your basket and cook them.</p>
+                <div className="tray-row">
+                  {[0, 1].map((slot) => {
+                    const thingId = pot[slot] !== undefined ? basket[pot[slot]] : undefined;
+                    return thingId ? (
+                      <button
+                        key={slot}
+                        className="tray-item"
+                        onClick={() => {
+                          setPot((p) => p.filter((_, n) => n !== slot));
+                          playPop();
+                        }}
+                      >
+                        <ThingArt id={thingId} />
+                        <span className="tray-name">{THINGS[thingId].name}</span>
+                      </button>
+                    ) : (
+                      <span key={slot} className="tray-slot" />
+                    );
+                  })}
+                  <button className="tray-cook" disabled={pot.length < 2} onClick={cook}>
+                    🍳 Cook!
+                  </button>
+                </div>
+              </>
+            )}
+
+            <div className="tray-basket">
+              <span className="tray-label">🧺 Your basket</span>
+              <div className="tray-row">
+                {basket.length === 0 && <span className="tray-empty">Nothing yet — try the market.</span>}
+                {basket.map((thingId, i) => (
+                  <button
+                    key={thingId + "-" + i}
+                    className={"tray-item" + (pot.includes(i) ? " is-in-pot" : "")}
+                    onClick={() => tapBasket(i)}
+                  >
+                    <ThingArt id={thingId} />
+                    <span className="tray-name">{THINGS[thingId]?.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="room-dots">
           {ROOM_ORDER.map((id) => (
@@ -538,6 +1292,17 @@ export function ExploreMode({
           </button>
         </div>
       </div>
+
+      {padId && padItem && (
+        <DrawingPad
+          strokes={padItem.strokes}
+          onChange={(strokes) => onUpdateFurniture(padId, { strokes })}
+          onClose={() => {
+            setPadId(null);
+            playTap();
+          }}
+        />
+      )}
 
       {castOpen && (
         <div
@@ -647,7 +1412,7 @@ export function ExploreMode({
                                 fill={room.floor}
                               />
                               <g transform={"translate(0 " + FURNITURE_DROP + ")"}>
-                                {f.id === "deskLamp" ? deskLamp(true) : FURNITURE[f.id]?.()}
+                                {renderFurniture(f.id, CATALOGUE_CTX)}
                               </g>
                             </svg>
                           </span>
@@ -664,4 +1429,172 @@ export function ExploreMode({
       )}
     </div>
   );
+}
+
+function trayTitle(tray: Tray): string {
+  return tray.kind === "stall" ? "What would you like?" : "What shall we cook?";
+}
+
+/* ---------------- the drawing pad ---------------- */
+
+const PAD_COLOURS = [
+  "#ff4d5e", "#ff9040", "#ffd23f", "#5ed64a", "#2ed6b8",
+  "#3aa0ff", "#7b5cf6", "#ff6fae", "#8d6e5c", "#2b2b3a",
+];
+
+const PAD_WIDTHS = [3, 6, 11];
+
+/**
+ * A full-size pad rather than drawing straight onto the frame in the room: the frame is barely
+ * a thumbnail on a phone, and a small child needs room to move.
+ *
+ * Strokes are handed back up after every line rather than on close, so a drawing survives the
+ * tab being shut mid-scribble.
+ */
+function DrawingPad({
+  strokes,
+  onChange,
+  onClose,
+}: {
+  strokes: Stroke[];
+  onChange: (next: Stroke[]) => void;
+  onClose: () => void;
+}): ReactElement {
+  const [colour, setColour] = useState(PAD_COLOURS[0]);
+  const [width, setWidth] = useState(PAD_WIDTHS[1]);
+  const [live, setLive] = useState<Stroke | null>(null);
+  const drawingRef = useRef(false);
+
+  /** Client pixels to pad coordinates. The pad keeps PAD's aspect, so this is a plain scale. */
+  function at(e: ReactPointerEvent<SVGSVGElement>): [number, number] {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return [
+      clamp(((e.clientX - rect.left) / rect.width) * PAD.w, 0, PAD.w),
+      clamp(((e.clientY - rect.top) / rect.height) * PAD.h, 0, PAD.h),
+    ];
+  }
+
+  function start(e: ReactPointerEvent<SVGSVGElement>) {
+    const [x, y] = at(e);
+    drawingRef.current = true;
+    setLive({ colour, width, points: [round(x), round(y)] });
+  }
+
+  function extend(e: ReactPointerEvent<SVGSVGElement>) {
+    if (!drawingRef.current) return;
+    const [x, y] = at(e);
+    setLive((s) => {
+      if (!s) return s;
+      const lastX = s.points[s.points.length - 2];
+      const lastY = s.points[s.points.length - 1];
+      // Skip points the finger barely moved to: they add nothing and bloat the save.
+      if (Math.hypot(x - lastX, y - lastY) < 1.4) return s;
+      return { ...s, points: [...s.points, round(x), round(y)] };
+    });
+  }
+
+  function finish() {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    // Handing the finished stroke up has to happen out here, not inside a setLive updater:
+    // an updater runs during render, and calling onChange from there updates App while this
+    // component is still rendering.
+    if (live) {
+      // A tap with no movement still leaves a dot, which is what a child expects.
+      const dot =
+        live.points.length === 2
+          ? { ...live, points: [...live.points, live.points[0], live.points[1]] }
+          : live;
+      onChange([...strokes, dot]);
+    }
+    setLive(null);
+  }
+
+  const shown = live ? [...strokes, live] : strokes;
+
+  return (
+    <div className="sheet-backdrop pad-backdrop">
+      <div className="sheet pad-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head">
+          <strong>Draw a picture</strong>
+          <button className="sheet-close" aria-label="Close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <svg
+          viewBox={"0 0 " + PAD.w + " " + PAD.h}
+          className="pad"
+          onPointerDown={start}
+          onPointerMove={extend}
+          onPointerUp={finish}
+          onPointerLeave={finish}
+          onPointerCancel={finish}
+        >
+          <rect x={0} y={0} width={PAD.w} height={PAD.h} fill="#fffdfa" />
+          {shown.map((s, i) => (
+            <polyline
+              key={i}
+              points={s.points.join(" ")}
+              fill="none"
+              stroke={s.colour}
+              strokeWidth={s.width}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ))}
+        </svg>
+
+        <div className="pad-tools">
+          <div className="swatches pad-swatches">
+            {PAD_COLOURS.map((hex) => (
+              <button
+                key={hex}
+                aria-label={"Colour " + hex}
+                className={"swatch" + (colour === hex ? " is-active" : "")}
+                style={{ background: hex }}
+                onClick={() => {
+                  setColour(hex);
+                  playTap();
+                }}
+              />
+            ))}
+          </div>
+          <div className="pad-row">
+            <div className="pad-widths">
+              {PAD_WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  aria-label={"Brush size " + w}
+                  className={"pad-width" + (width === w ? " is-active" : "")}
+                  onClick={() => {
+                    setWidth(w);
+                    playTap();
+                  }}
+                >
+                  <span style={{ width: w * 2.2, height: w * 2.2, background: colour }} />
+                </button>
+              ))}
+            </div>
+            <button
+              className="btn-secondary pad-clear"
+              onClick={() => {
+                onChange([]);
+                playWhoosh();
+              }}
+            >
+              🧽 Clear
+            </button>
+            <button className="btn-primary pad-done" onClick={onClose}>
+              Done ▶
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function round(n: number): number {
+  return Math.round(n * 10) / 10;
 }

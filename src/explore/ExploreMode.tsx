@@ -105,11 +105,19 @@ const SEATS: Record<
  * chair seen side on has its seat off to one side of the back post; turned to face you, the
  * seat is centred, and a sitter left at the old spot ends up beside the chair rather than on it.
  */
-function seatPlace(item: PlacedFurniture): { x: number; y: number; pose: AvatarPose } | null {
-  const seat = SEATS[item.id];
+function seatPlaceAt(
+  id: string,
+  facing: number,
+  dx: number,
+  dy: number
+): { x: number; y: number; pose: AvatarPose } | null {
+  const seat = SEATS[id];
   if (!seat) return null;
-  const shift = seatShift(item.id, item.facing);
-  return { x: seat.x + item.dx + shift, y: seat.y + item.dy, pose: seat.pose };
+  return { x: seat.x + dx + seatShift(id, facing), y: seat.y + dy, pose: seat.pose };
+}
+
+function seatPlace(item: PlacedFurniture): { x: number; y: number; pose: AvatarPose } | null {
+  return seatPlaceAt(item.id, item.facing, item.dx, item.dy);
 }
 
 function seatZone(item: PlacedFurniture): { x: number; y: number } | null {
@@ -213,6 +221,20 @@ interface DragState {
    */
   overBin: boolean;
   /**
+   * The nodes the drag writes to directly. Every move used to update React state, which
+   * redrew the scene to move one thing; now the move sets a transform and the save is told
+   * once, on drop.
+   */
+  node: SVGGElement;
+  /** The wrapper holding what is inside an open container, which travels with it. */
+  contents: SVGGElement | null;
+  /** Set when someone is sitting on the dragged piece and has to be carried along. */
+  rider: { node: SVGGElement; id: string; facing: number } | null;
+  /** Where the drag has got to: a piece's offset, or the character's position. */
+  x: number;
+  y: number;
+  pose: AvatarPose;
+  /**
    * The bin's box, measured on the first move that finds it. It cannot move while a drag is
    * running, and re-measuring it every move forces a layout on each one.
    */
@@ -220,6 +242,50 @@ interface DragState {
   /** Kept so exactly these listeners can be detached again when the drag ends. */
   move: (e: PointerEvent) => void;
   end: () => void;
+}
+
+/**
+ * Where a piece and the character are drawn. The drag writes these straight to the DOM rather
+ * than going through React, so both have to come from here — if the two ever disagreed, a
+ * piece would jump the moment it was let go.
+ */
+function pieceTransform(dx: number, dy: number): string {
+  return "translate(" + dx + " " + (FURNITURE_DROP + dy) + ")";
+}
+
+function characterTransform(x: number, y: number, pose: AvatarPose): string {
+  return (
+    "translate(" + x + " " + y + ")" +
+    (pose === "lie" ? " rotate(-90)" : "") +
+    " scale(0.47) translate(-100 -380)"
+  );
+}
+
+/**
+ * Where a client point lands inside an SVG, using the element's own transform.
+ *
+ * Working this out from getBoundingClientRect assumes the viewBox fills the element exactly,
+ * and it usually doesn't: `meet` scales the scene to fit and centres it, so whichever axis is
+ * tighter decides the scale and the other gets empty space at its edges. On a window wider
+ * than the room is tall that empty space is hundreds of pixels, and every guess made from the
+ * element's width was wrong by the same ratio — which is why a dragged piece crawled along at
+ * two thirds of the speed of the pointer.
+ */
+function clientToSvg(
+  svg: SVGSVGElement | null,
+  clientX: number,
+  clientY: number
+): { x: number; y: number } | null {
+  const ctm = svg?.getScreenCTM();
+  if (!ctm) return null;
+  const point = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+  return { x: point.x, y: point.y };
+}
+
+/** Client pixels per user unit, from that same transform. */
+function svgScale(svg: SVGSVGElement | null): number {
+  const ctm = svg?.getScreenCTM();
+  return ctm && ctm.a > 0 ? ctm.a : 1;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -274,7 +340,7 @@ const Piece = memo(function Piece({
           back to where it was authored. */}
       <g
         className={"draggable" + (dragging ? " is-dragging" : "")}
-        transform={"translate(" + item.dx + " " + (FURNITURE_DROP + item.dy) + ")"}
+        transform={pieceTransform(item.dx, item.dy)}
         onPointerDown={(e) => onGrab(e, item.id)}
       >
         <g className="furniture-in">{art}</g>
@@ -283,28 +349,32 @@ const Piece = memo(function Piece({
       {/* What is inside an open container is a layer of its own rather than part of the piece:
           anything drawn inside the furniture's group would drag the furniture instead of
           itself. */}
-      {item.open &&
-        item.stored.map((thingId, i) => {
-          const slot = slotAt(item.id, i);
-          const thing = THINGS[thingId];
-          if (!slot || !thing) return null;
-          return (
-            <g
-              key={thingId + "-" + i}
-              className="draggable"
-              transform={
-                "translate(" + (item.dx + slot.x) + " " +
-                (FURNITURE_DROP + item.dy + slot.y) + ") scale(" + slot.scale + ")"
-              }
-              onPointerDown={(e) => onGrabThing(e, { kind: "container", id: item.id, index: i }, thingId)}
-            >
-              {/* A pad the size of the slot — a carrot drawn this small is far too little to
-                  aim a finger at. */}
-              <rect x={-24} y={-24} width={48} height={48} fill="transparent" />
-              {thing.art()}
-            </g>
-          );
-        })}
+      {/* One wrapper carrying the piece's offset, with each thing placed in its slot inside
+          it, so dragging the cupboard moves everything in it by moving a single node. */}
+      {item.open && item.stored.length > 0 && (
+        <g data-contents={item.id} transform={pieceTransform(item.dx, item.dy)}>
+          {item.stored.map((thingId, i) => {
+            const slot = slotAt(item.id, i);
+            const thing = THINGS[thingId];
+            if (!slot || !thing) return null;
+            return (
+              <g
+                key={thingId + "-" + i}
+                className="draggable"
+                transform={"translate(" + slot.x + " " + slot.y + ") scale(" + slot.scale + ")"}
+                onPointerDown={(e) =>
+                  onGrabThing(e, { kind: "container", id: item.id, index: i }, thingId)
+                }
+              >
+                {/* A pad the size of the slot — a carrot drawn this small is far too little to
+                    aim a finger at. */}
+                <rect x={-24} y={-24} width={48} height={48} fill="transparent" />
+                {thing.art()}
+              </g>
+            );
+          })}
+        </g>
+      )}
     </Fragment>
   );
 });
@@ -331,12 +401,8 @@ const Character = memo(function Character({
 }): ReactElement {
   return (
     <g
-      className={"draggable" + (dragging ? " is-dragging" : "")}
-      transform={
-        "translate(" + x + " " + y + ")" +
-        (pose === "lie" ? " rotate(-90)" : "") +
-        " scale(0.47) translate(-100 -380)"
-      }
+      className={"draggable character" + (dragging ? " is-dragging" : "")}
+      transform={characterTransform(x, y, pose)}
       onPointerDown={onGrab}
     >
       <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} />
@@ -519,8 +585,7 @@ export function ExploreMode({
 
   /** Client pixels per room unit — the scene scales uniformly, so one number covers both axes. */
   function currentScale(): number {
-    const rect = svgRef.current?.getBoundingClientRect();
-    return rect && rect.width > 0 ? rect.width / ROOM_W : 1;
+    return svgScale(svgRef.current);
   }
 
   /** Detach whatever a drag attached, whether it ended normally or the component went away. */
@@ -554,6 +619,33 @@ export function ExploreMode({
     setPot([]);
   }
 
+  /** Put the dragged things where the pointer has taken them, without going through React. */
+  function applyDrag(drag: DragState) {
+    if (drag.target.kind === "avatar") {
+      drag.node.setAttribute("transform", characterTransform(drag.x, drag.y, drag.pose));
+      return;
+    }
+    const placed = pieceTransform(drag.x, drag.y);
+    drag.node.setAttribute("transform", placed);
+    drag.contents?.setAttribute("transform", placed);
+    if (drag.rider) {
+      const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
+      if (place) {
+        drag.rider.node.setAttribute("transform", characterTransform(place.x, place.y, place.pose));
+      }
+    }
+  }
+
+  /**
+   * A render that happens in the middle of a drag for some unrelated reason — a timer running
+   * out, the bin lighting up — redraws the piece from the save, which has not been told about
+   * the drag yet and would snap it back to where it started. Putting it back after every
+   * render costs nothing and removes the whole class of problem.
+   */
+  useEffect(() => {
+    if (dragRef.current) applyDrag(dragRef.current);
+  });
+
   function isOverBin(drag: DragState, ev: PointerEvent): boolean {
     if (!drag.binRect) {
       // It only exists from the render after the drag started, so the first move or two may
@@ -571,6 +663,7 @@ export function ExploreMode({
     // suppress the click of the NEXT tap, so the first button pressed after any drag did
     // nothing. touch-action: none on the stage already stops the browser claiming the gesture.
     const scale = currentScale();
+    const node = e.currentTarget;
     let originX: number;
     let originY: number;
     let bounds: DragState["bounds"];
@@ -630,6 +723,21 @@ export function ExploreMode({
       }
     }
 
+    // Anything that has to travel with the dragged piece, found once now rather than looked up
+    // on every move.
+    let contents: SVGGElement | null = null;
+    let rider: DragState["rider"] = null;
+    if (target.kind === "furniture") {
+      const svg = svgRef.current;
+      contents = svg?.querySelector<SVGGElement>('[data-contents="' + target.id + '"]') ?? null;
+      const current = roomStateRef.current;
+      if (current.avatarSeat === target.id) {
+        const riderNode = svg?.querySelector<SVGGElement>("g.character") ?? null;
+        const item = current.items.find((i) => i.id === target.id);
+        if (riderNode && item) rider = { node: riderNode, id: target.id, facing: item.facing };
+      }
+    }
+
     // Listeners go on the window rather than the dragged element. Pointer capture on an SVG
     // child plus React's delegated events is fragile — a touch that the browser decides is a
     // scroll fires pointercancel and the drag dies after a few pixels.
@@ -641,22 +749,19 @@ export function ExploreMode({
       // treating this as a scroll, and cancelling these moves made Chromium suppress the click
       // from the NEXT tap, so the first button press after any drag did nothing.
 
-      const x = clamp(drag.originX + (ev.clientX - drag.clientX) / drag.scale, drag.bounds.minX, drag.bounds.maxX);
-      const y = clamp(drag.originY + (ev.clientY - drag.clientY) / drag.scale, drag.bounds.minY, drag.bounds.maxY);
+      drag.x = clamp(
+        drag.originX + (ev.clientX - drag.clientX) / drag.scale,
+        drag.bounds.minX,
+        drag.bounds.maxX
+      );
+      drag.y = clamp(
+        drag.originY + (ev.clientY - drag.clientY) / drag.scale,
+        drag.bounds.minY,
+        drag.bounds.maxY
+      );
+      applyDrag(drag);
 
-      if (drag.target.kind === "avatar") {
-        onMoveAvatar(x, y);
-      } else {
-        const movedId = drag.target.id;
-        onMoveFurniture(movedId, x, y);
-        // Someone sitting on this piece goes with it, rather than being left hovering where
-        // the chair used to be.
-        const seated = roomStateRef.current;
-        if (seated.avatarSeat === movedId) {
-          const item = seated.items.find((i) => i.id === movedId);
-          const place = item && seatPlace({ ...item, dx: x, dy: y });
-          if (place) onMoveAvatar(place.x, place.y);
-        }
+      if (drag.target.kind === "furniture") {
         const over = isOverBin(drag, ev);
         if (over !== drag.overBin) {
           drag.overBin = over;
@@ -676,11 +781,22 @@ export function ExploreMode({
       setDraggingKey(null);
       setOverBin(false);
 
+      // The moves only moved the DOM, so this is where the save finds out where things are.
+      if (drag.target.kind === "avatar") {
+        onMoveAvatar(drag.x, drag.y);
+      } else {
+        onMoveFurniture(drag.target.id, drag.x, drag.y);
+        if (drag.rider) {
+          const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
+          if (place) onMoveAvatar(place.x, place.y);
+        }
+      }
+
       // A finger wobbles; 5px counted honest taps as drags, which re-seated a character the
       // moment you tried to tap them off a chair.
       const travelled = ev ? Math.hypot(ev.clientX - drag.clientX, ev.clientY - drag.clientY) : 0;
       if (travelled < 11) {
-        onTap(drag.target);
+        onTap(drag.target, drag.x, drag.y);
         return;
       }
 
@@ -691,7 +807,7 @@ export function ExploreMode({
         return;
       }
 
-      if (drag.target.kind === "avatar") settleAvatar();
+      if (drag.target.kind === "avatar") settleAvatar(drag.x, drag.y);
       playPop();
     };
 
@@ -704,6 +820,12 @@ export function ExploreMode({
       originY,
       scale,
       bounds,
+      node,
+      contents,
+      rider,
+      x: originX,
+      y: originY,
+      pose: roomStateRef.current.avatarPose,
       overBin: false,
       binRect: null,
       move,
@@ -730,13 +852,16 @@ export function ExploreMode({
     playThud();
   }
 
-  /** A press that never really moved: treat it as a tap on whatever was pressed. */
-  function onTap(target: DragTarget) {
+  /**
+   * A press that never really moved: treat it as a tap on whatever was pressed. The position
+   * is passed in because the save has only just been told about it and won't have caught up.
+   */
+  function onTap(target: DragTarget, x: number, y: number) {
     const current = roomStateRef.current;
     if (target.kind === "avatar") {
       // Tap the character to get them back up again.
       if (current.avatarPose !== "stand") {
-        onMoveAvatar(current.avatarX, current.avatarY - 18, { pose: "stand", seat: null });
+        onMoveAvatar(x, y - 18, { pose: "stand", seat: null });
         playSparkle();
       } else {
         playPop();
@@ -808,13 +933,13 @@ export function ExploreMode({
   }
 
   /** After the character is dropped, sit or lie them on whatever they landed on. */
-  function settleAvatar() {
+  function settleAvatar(x: number, y: number) {
     const current = roomStateRef.current;
 
     // Dragging someone who is already sitting or lying always frees them. Otherwise the snap
     // radius grabs them straight back onto the seat and there's no way off it.
     if (current.avatarPose !== "stand") {
-      onMoveAvatar(current.avatarX, current.avatarY, { pose: "stand", seat: null });
+      onMoveAvatar(x, y, { pose: "stand", seat: null });
       playPop();
       return;
     }
@@ -826,7 +951,7 @@ export function ExploreMode({
       const zone = seatZone(item);
       const place = seatPlace(item);
       if (!zone || !place) continue;
-      const distance = Math.hypot(current.avatarX - zone.x, current.avatarY - zone.y);
+      const distance = Math.hypot(x - zone.x, y - zone.y);
       if (distance < bestDistance) {
         bestDistance = distance;
         best = { id: item.id, ...place };
@@ -844,12 +969,9 @@ export function ExploreMode({
     return roomStateRef.current.items.filter((i) => i.open && CONTAINER_DROP[i.id]);
   }
 
-  /** Client pixels to room coordinates. The scene is width-limited and anchored to the top. */
+  /** Client pixels to room coordinates. */
   function toRoom(clientX: number, clientY: number): { x: number; y: number } | null {
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return null;
-    const scale = rect.width / ROOM_W;
-    return { x: (clientX - rect.left) / scale, y: (clientY - rect.top) / scale };
+    return clientToSvg(svgRef.current, clientX, clientY);
   }
 
   /** Which open container the finger is over, if any. */
@@ -1062,6 +1184,7 @@ export function ExploreMode({
         <h1 className="logo">
           {room.icon} {room.name}
         </h1>
+        <span className="version">v{__APP_VERSION__}</span>
         <div className="topbar-actions">
           <button
             className="chip-btn chip-ghost chip-icon"
@@ -1554,51 +1677,57 @@ function DrawingPad({
   const [colour, setColour] = useState(PAD_COLOURS[0]);
   const [width, setWidth] = useState(PAD_WIDTHS[1]);
   const [live, setLive] = useState<Stroke | null>(null);
-  const drawingRef = useRef(false);
+  /**
+   * The stroke being drawn, held in a ref as well as in state. The state copy is what gets
+   * rendered; this is what the handlers read. Working from the state copy meant a stroke that
+   * started and finished before React had re-rendered — a very quick tap — was dropped, since
+   * the finishing handler still saw the null from the last render.
+   */
+  const liveRef = useRef<Stroke | null>(null);
 
-  /** Client pixels to pad coordinates. The pad keeps PAD's aspect, so this is a plain scale. */
+  /**
+   * Client pixels to pad coordinates. Taken from the pad's own transform rather than assuming
+   * the drawing area fills its box: whenever the layout gives it a shape that isn't the
+   * viewBox's, the pad is scaled to fit and centred inside it, and the drawing lands away from
+   * the fingertip by however far it was centred.
+   */
   function at(e: ReactPointerEvent<SVGSVGElement>): [number, number] {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return [
-      clamp(((e.clientX - rect.left) / rect.width) * PAD.w, 0, PAD.w),
-      clamp(((e.clientY - rect.top) / rect.height) * PAD.h, 0, PAD.h),
-    ];
+    const point = clientToSvg(e.currentTarget, e.clientX, e.clientY);
+    if (!point) return [0, 0];
+    return [clamp(point.x, 0, PAD.w), clamp(point.y, 0, PAD.h)];
+  }
+
+  function track(stroke: Stroke | null) {
+    liveRef.current = stroke;
+    setLive(stroke);
   }
 
   function start(e: ReactPointerEvent<SVGSVGElement>) {
     const [x, y] = at(e);
-    drawingRef.current = true;
-    setLive({ colour, width, points: [round(x), round(y)] });
+    track({ colour, width, points: [round(x), round(y)] });
   }
 
   function extend(e: ReactPointerEvent<SVGSVGElement>) {
-    if (!drawingRef.current) return;
+    const stroke = liveRef.current;
+    if (!stroke) return;
     const [x, y] = at(e);
-    setLive((s) => {
-      if (!s) return s;
-      const lastX = s.points[s.points.length - 2];
-      const lastY = s.points[s.points.length - 1];
-      // Skip points the finger barely moved to: they add nothing and bloat the save.
-      if (Math.hypot(x - lastX, y - lastY) < 1.4) return s;
-      return { ...s, points: [...s.points, round(x), round(y)] };
-    });
+    const lastX = stroke.points[stroke.points.length - 2];
+    const lastY = stroke.points[stroke.points.length - 1];
+    // Skip points the finger barely moved to: they add nothing and bloat the save.
+    if (Math.hypot(x - lastX, y - lastY) < 1.4) return;
+    track({ ...stroke, points: [...stroke.points, round(x), round(y)] });
   }
 
   function finish() {
-    if (!drawingRef.current) return;
-    drawingRef.current = false;
-    // Handing the finished stroke up has to happen out here, not inside a setLive updater:
-    // an updater runs during render, and calling onChange from there updates App while this
-    // component is still rendering.
-    if (live) {
-      // A tap with no movement still leaves a dot, which is what a child expects.
-      const dot =
-        live.points.length === 2
-          ? { ...live, points: [...live.points, live.points[0], live.points[1]] }
-          : live;
-      onChange([...strokes, dot]);
-    }
-    setLive(null);
+    const stroke = liveRef.current;
+    if (!stroke) return;
+    // A tap with no movement still leaves a dot, which is what a child expects.
+    const dot =
+      stroke.points.length === 2
+        ? { ...stroke, points: [...stroke.points, stroke.points[0], stroke.points[1]] }
+        : stroke;
+    track(null);
+    onChange([...strokes, dot]);
   }
 
   const shown = live ? [...strokes, live] : strokes;

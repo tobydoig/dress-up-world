@@ -236,6 +236,7 @@ export function DesignMode({
             Dress Up <span>World</span>
           </h1>
         )}
+        <span className="version">v{__APP_VERSION__}</span>
         <button
           className="chip-btn"
           onClick={() => {

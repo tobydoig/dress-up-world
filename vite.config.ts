@@ -1,8 +1,15 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+// package.json is the one place the version lives; the app is handed it at build time so the
+// number on screen can't drift from the one in the repo.
+const { version } = JSON.parse(readFileSync("./package.json", "utf8")) as { version: string };
+
 export default defineConfig({
   plugins: [react()],
+
+  define: { __APP_VERSION__: JSON.stringify(version) },
 
   /**
    * Published as a project site at https://tobyandzuzka.com/dress-up-world/, so asset URLs

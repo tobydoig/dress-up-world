@@ -368,8 +368,13 @@ function pair(pose: Pose, render: (key: string) => ReactElement): ReactElement {
         [foot.leftCx, -1],
         [foot.rightCx, 1],
       ] as Array<[number, number]>).map(([cx, dir]) => (
-        <g key={cx} transform={"translate(" + cx + " " + foot.cy + ") scale(" + dir + " 1) translate(-4 0)"}>
-          {render("s" + cx)}
+        // The class goes on an outer wrapper rather than on the positioned group: a CSS
+        // transform replaces an element's transform attribute outright, so animating this
+        // group directly would throw the shoe back to the origin.
+        <g key={cx} className={dir < 0 ? "av-foot-l" : "av-foot-r"}>
+          <g transform={"translate(" + cx + " " + foot.cy + ") scale(" + dir + " 1) translate(-4 0)"}>
+            {render("s" + cx)}
+          </g>
         </g>
       ))}
     </g>

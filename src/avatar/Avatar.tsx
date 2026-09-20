@@ -43,6 +43,9 @@ export type { Pose };
  */
 const IDLES: Record<string, number> = {
   look: 3000,
+  shift: 4000,
+  shuffle: 2400,
+  wring: 2600,
   scratch: 2000,
   hair: 1700,
   nose: 1900,
@@ -52,11 +55,22 @@ const IDLES: Record<string, number> = {
   stretch: 2100,
 };
 
-// "look" appears twice so it comes up most often — it is the quietest of them, and the one
-// that never looks odd.
-const STANDING = ["look", "look", "scratch", "hair", "nose", "wave", "bounce", "dance", "stretch"];
-/** Sitting down rules out everything that needs feet. */
-const SEATED = ["look", "look", "scratch", "nose", "wave"];
+/**
+ * Weighted by repetition rather than by probabilities, because a list is easier to read than
+ * a table of numbers. The quiet ones fill most of it: someone standing about mostly shifts
+ * their weight and looks around, and only occasionally breaks into a dance.
+ */
+const STANDING = [
+  "look", "look", "look",
+  "shift", "shift", "shift",
+  "shuffle", "shuffle",
+  "wring", "wring",
+  "scratch", "hair", "nose", "wave",
+  "bounce", "dance", "stretch",
+];
+
+/** Sitting down rules out everything that needs feet on the floor. */
+const SEATED = ["look", "look", "wring", "wring", "scratch", "nose", "wave"];
 
 const GAP_MIN = 4000;
 const GAP_SPREAD = 6000;

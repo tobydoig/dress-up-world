@@ -261,6 +261,33 @@ function characterTransform(x: number, y: number, pose: AvatarPose): string {
   );
 }
 
+/**
+ * Where a client point lands inside an SVG, using the element's own transform.
+ *
+ * Working this out from getBoundingClientRect assumes the viewBox fills the element exactly,
+ * and it usually doesn't: `meet` scales the scene to fit and centres it, so whichever axis is
+ * tighter decides the scale and the other gets empty space at its edges. On a window wider
+ * than the room is tall that empty space is hundreds of pixels, and every guess made from the
+ * element's width was wrong by the same ratio — which is why a dragged piece crawled along at
+ * two thirds of the speed of the pointer.
+ */
+function clientToSvg(
+  svg: SVGSVGElement | null,
+  clientX: number,
+  clientY: number
+): { x: number; y: number } | null {
+  const ctm = svg?.getScreenCTM();
+  if (!ctm) return null;
+  const point = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+  return { x: point.x, y: point.y };
+}
+
+/** Client pixels per user unit, from that same transform. */
+function svgScale(svg: SVGSVGElement | null): number {
+  const ctm = svg?.getScreenCTM();
+  return ctm && ctm.a > 0 ? ctm.a : 1;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -558,8 +585,7 @@ export function ExploreMode({
 
   /** Client pixels per room unit — the scene scales uniformly, so one number covers both axes. */
   function currentScale(): number {
-    const rect = svgRef.current?.getBoundingClientRect();
-    return rect && rect.width > 0 ? rect.width / ROOM_W : 1;
+    return svgScale(svgRef.current);
   }
 
   /** Detach whatever a drag attached, whether it ended normally or the component went away. */
@@ -943,12 +969,9 @@ export function ExploreMode({
     return roomStateRef.current.items.filter((i) => i.open && CONTAINER_DROP[i.id]);
   }
 
-  /** Client pixels to room coordinates. The scene is width-limited and anchored to the top. */
+  /** Client pixels to room coordinates. */
   function toRoom(clientX: number, clientY: number): { x: number; y: number } | null {
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0) return null;
-    const scale = rect.width / ROOM_W;
-    return { x: (clientX - rect.left) / scale, y: (clientY - rect.top) / scale };
+    return clientToSvg(svgRef.current, clientX, clientY);
   }
 
   /** Which open container the finger is over, if any. */
@@ -1654,51 +1677,57 @@ function DrawingPad({
   const [colour, setColour] = useState(PAD_COLOURS[0]);
   const [width, setWidth] = useState(PAD_WIDTHS[1]);
   const [live, setLive] = useState<Stroke | null>(null);
-  const drawingRef = useRef(false);
+  /**
+   * The stroke being drawn, held in a ref as well as in state. The state copy is what gets
+   * rendered; this is what the handlers read. Working from the state copy meant a stroke that
+   * started and finished before React had re-rendered — a very quick tap — was dropped, since
+   * the finishing handler still saw the null from the last render.
+   */
+  const liveRef = useRef<Stroke | null>(null);
 
-  /** Client pixels to pad coordinates. The pad keeps PAD's aspect, so this is a plain scale. */
+  /**
+   * Client pixels to pad coordinates. Taken from the pad's own transform rather than assuming
+   * the drawing area fills its box: whenever the layout gives it a shape that isn't the
+   * viewBox's, the pad is scaled to fit and centred inside it, and the drawing lands away from
+   * the fingertip by however far it was centred.
+   */
   function at(e: ReactPointerEvent<SVGSVGElement>): [number, number] {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return [
-      clamp(((e.clientX - rect.left) / rect.width) * PAD.w, 0, PAD.w),
-      clamp(((e.clientY - rect.top) / rect.height) * PAD.h, 0, PAD.h),
-    ];
+    const point = clientToSvg(e.currentTarget, e.clientX, e.clientY);
+    if (!point) return [0, 0];
+    return [clamp(point.x, 0, PAD.w), clamp(point.y, 0, PAD.h)];
+  }
+
+  function track(stroke: Stroke | null) {
+    liveRef.current = stroke;
+    setLive(stroke);
   }
 
   function start(e: ReactPointerEvent<SVGSVGElement>) {
     const [x, y] = at(e);
-    drawingRef.current = true;
-    setLive({ colour, width, points: [round(x), round(y)] });
+    track({ colour, width, points: [round(x), round(y)] });
   }
 
   function extend(e: ReactPointerEvent<SVGSVGElement>) {
-    if (!drawingRef.current) return;
+    const stroke = liveRef.current;
+    if (!stroke) return;
     const [x, y] = at(e);
-    setLive((s) => {
-      if (!s) return s;
-      const lastX = s.points[s.points.length - 2];
-      const lastY = s.points[s.points.length - 1];
-      // Skip points the finger barely moved to: they add nothing and bloat the save.
-      if (Math.hypot(x - lastX, y - lastY) < 1.4) return s;
-      return { ...s, points: [...s.points, round(x), round(y)] };
-    });
+    const lastX = stroke.points[stroke.points.length - 2];
+    const lastY = stroke.points[stroke.points.length - 1];
+    // Skip points the finger barely moved to: they add nothing and bloat the save.
+    if (Math.hypot(x - lastX, y - lastY) < 1.4) return;
+    track({ ...stroke, points: [...stroke.points, round(x), round(y)] });
   }
 
   function finish() {
-    if (!drawingRef.current) return;
-    drawingRef.current = false;
-    // Handing the finished stroke up has to happen out here, not inside a setLive updater:
-    // an updater runs during render, and calling onChange from there updates App while this
-    // component is still rendering.
-    if (live) {
-      // A tap with no movement still leaves a dot, which is what a child expects.
-      const dot =
-        live.points.length === 2
-          ? { ...live, points: [...live.points, live.points[0], live.points[1]] }
-          : live;
-      onChange([...strokes, dot]);
-    }
-    setLive(null);
+    const stroke = liveRef.current;
+    if (!stroke) return;
+    // A tap with no movement still leaves a dot, which is what a child expects.
+    const dot =
+      stroke.points.length === 2
+        ? { ...stroke, points: [...stroke.points, stroke.points[0], stroke.points[1]] }
+        : stroke;
+    track(null);
+    onChange([...strokes, dot]);
   }
 
   const shown = live ? [...strokes, live] : strokes;

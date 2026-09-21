@@ -70,6 +70,25 @@ export const EYE_STYLES: Record<string, (p: FaceProps) => ReactElement> = {
     </g>
   ),
 
+  /* The brows carry the whole thing. Narrowing the eyes a little underneath stops it
+     reading as a friendly face wearing an angry hat. */
+  angry: (p) => (
+    <g>
+      {openEye(EYE.leftCx, p, 0.86)}
+      {openEye(EYE.rightCx, p, 0.86)}
+      <path
+        d={
+          "M" + (EYE.leftCx - 13) + "," + (EYE.cy - 18) + " L" + (EYE.leftCx + 12) + "," + (EYE.cy - 8) + " " +
+          "M" + (EYE.rightCx + 13) + "," + (EYE.cy - 18) + " L" + (EYE.rightCx - 12) + "," + (EYE.cy - 8)
+        }
+        stroke={LINE}
+        strokeWidth={4.6}
+        strokeLinecap="round"
+        fill="none"
+      />
+    </g>
+  ),
+
   sleepy: (p) => (
     <g>
       {openEye(EYE.leftCx, p, 1)}
@@ -238,6 +257,27 @@ export const MOUTH_STYLES: Record<string, () => ReactElement> = {
     <g>
       <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 3} rx={9} ry={11} fill={MOUTH_DARK} />
       <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 9} rx={5.5} ry={4} fill={TONGUE} />
+    </g>
+  ),
+
+  /* Gritted, not merely turned down — the frown already does turned down, and next to it a
+     second sad mouth would not read as a different feeling at all. */
+  angry: () => (
+    <g>
+      <path
+        d={
+          "M" + (MOUTH.cx - 17) + "," + (MOUTH.cy + 7) + " q17,-15 34,0 q-17,8 -34,0 z"
+        }
+        fill={MOUTH_DARK}
+      />
+      <path
+        d={"M" + (MOUTH.cx - 13) + "," + (MOUTH.cy + 2) + " l4.5,4 l4.5,-4 l4.5,4 l4.5,-4 l4.5,4"}
+        stroke="#fffdfa"
+        strokeWidth={2.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
     </g>
   ),
 

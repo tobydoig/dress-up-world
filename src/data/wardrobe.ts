@@ -195,6 +195,7 @@ export const CATEGORIES: CategoryDef[] = [
       { id: "square", name: "Square" },
       { id: "sunnies", name: "Shades" },
       { id: "heartSunnies", name: "Hearts" },
+      { id: "onHead", name: "Pushed up" },
     ],
   },
   {
@@ -223,6 +224,7 @@ export const CATEGORIES: CategoryDef[] = [
       { id: "happy", name: "Happy" },
       { id: "wink", name: "Wink" },
       { id: "sleepy", name: "Sleepy" },
+      { id: "angry", name: "Cross" },
     ],
   },
   {
@@ -250,6 +252,7 @@ export const CATEGORIES: CategoryDef[] = [
       { id: "smirk", name: "Smirk" },
       { id: "blank", name: "Blank" },
       { id: "frown", name: "Grumpy" },
+      { id: "angry", name: "Cross" },
       { id: "sad", name: "Sad" },
     ],
   },

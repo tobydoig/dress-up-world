@@ -88,15 +88,17 @@ export function App() {
       }
       const id = newId();
       setEditingId(id);
-      return {
+      const made: GameSave = {
         ...prev,
         characters: [
           ...prev.characters,
           { id, name: given || "Character " + (prev.characters.length + 1), look },
         ],
         activeId: id,
-        inScene: prev.inScene.length === 0 ? [id] : prev.inScene,
       };
+      // Somebody just made is somebody she wants to see, so they are waiting in the room
+      // she is about to be dropped back into.
+      return bringTo(made, prev.lastRoom, id);
     });
     setMode("explore");
   }
@@ -114,8 +116,6 @@ export function App() {
       ...prev,
       characters: [...prev.characters, { id, name: given, look: DEFAULT_LOOK }],
       activeId: id,
-      // The very first one has to come out, or the room she is sent to is empty.
-      inScene: prev.inScene.length === 0 ? [id] : prev.inScene,
     }));
     setEditingId(id);
     setLook(DEFAULT_LOOK);
@@ -155,27 +155,16 @@ export function App() {
    * Out into the room, or back in again — and whoever came out last is the one "Dress up"
    * will edit, so touching a face is all it takes to choose who you are dressing.
    *
-   * The last one out stays out. An empty room with a "Dress up" button that edits nobody in
-   * particular is a dead end she would have no way back from.
+   * A room may be left empty. That is just a room with nobody in it, which rooms are
+   * allowed to be now that each has its own.
    */
   function toggleInScene(id: string) {
     if (!save.characters.some((c) => c.id === id)) return;
-    setSave((prev) => {
-      if (prev.inScene.includes(id)) {
-        if (prev.inScene.length < 2) return prev;
-        const inScene = prev.inScene.filter((c) => c !== id);
-        return {
-          ...prev,
-          inScene,
-          activeId: prev.activeId === id ? inScene[0] : prev.activeId,
-          rooms: forgetPlaces(prev.rooms, [id]),
-        };
-      }
-      // Full up: the one who has been out longest makes way.
-      const inScene = [...prev.inScene, id].slice(-MAX_CAST);
-      const pushedOut = prev.inScene.filter((c) => !inScene.includes(c));
-      return { ...prev, inScene, activeId: id, rooms: forgetPlaces(prev.rooms, pushedOut) };
-    });
+    setSave((prev) =>
+      prev.rooms[prev.lastRoom].places[id]
+        ? { ...prev, rooms: forgetPlaces(prev.rooms, [id]) }
+        : { ...bringTo(prev, prev.lastRoom, id), activeId: id }
+    );
     setEditingId(id);
   }
 
@@ -192,23 +181,16 @@ export function App() {
     setEditingId(id);
     setLook(chosen.look);
     setName(chosen.name);
-    // Picking a face is how somebody gets into the room. Keeping the two apart was tidier
-    // and it left no way in from the flow people actually use — choose a character, press
-    // Play, and wonder why nothing changed. Getting them OUT is the sheet, or the bin.
-    setSave((prev) => ({
-      ...prev,
-      activeId: id,
-      inScene: prev.inScene.includes(id) ? prev.inScene : [...prev.inScene, id].slice(-MAX_CAST),
-    }));
+    // Dressing somebody does not move them. Their clothes change wherever they happen to
+    // be standing, which is the whole point of them living in rooms.
+    setSave((prev) => ({ ...prev, activeId: id }));
   }
 
   function deleteCharacter(id: string) {
     setSave((prev) => {
       const characters = prev.characters.filter((c) => c.id !== id);
       const activeId = prev.activeId === id ? characters[0]?.id ?? null : prev.activeId;
-      let inScene = prev.inScene.filter((c) => c !== id);
-      if (inScene.length === 0 && activeId) inScene = [activeId];
-      return { ...prev, characters, activeId, inScene, rooms: forgetPlaces(prev.rooms, [id]) };
+      return { ...prev, characters, activeId, rooms: forgetPlaces(prev.rooms, [id]) };
     });
     if (editingId === id) {
       setEditingId(null);
@@ -230,6 +212,29 @@ export function App() {
       next[room] = { ...state, places };
     }
     return next;
+  }
+
+  /**
+   * Brings somebody to a room, from wherever in the house they were. A character stands in
+   * one place at a time, so arriving somewhere is the same act as leaving everywhere else —
+   * which means tapping a face always fetches her, rather than sometimes appearing to do
+   * nothing because she is two rooms away.
+   */
+  function bringTo(prev: GameSave, room: RoomId, id: string): GameSave {
+    const rooms = {} as GameSave["rooms"];
+    for (const [key, state] of Object.entries(prev.rooms) as Array<[RoomId, RoomState]>) {
+      const places = { ...state.places };
+      const wasHere = places[id];
+      delete places[id];
+      if (key === room) {
+        const others = Object.keys(places);
+        // Full up: whoever has been in longest steps out to make room.
+        if (others.length >= MAX_CAST) delete places[others[0]];
+        places[id] = wasHere ?? castHome(Object.keys(places).length, MAX_CAST);
+      }
+      rooms[key] = { ...state, places };
+    }
+    return { ...prev, rooms };
   }
 
   function changeRoom(next: RoomId) {
@@ -310,9 +315,13 @@ export function App() {
         ...prev.rooms,
         [prev.lastRoom]: {
           items: prev.rooms[prev.lastRoom].items.map((i) => ({ ...i, dx: 0, dy: 0 })),
-          // Everyone back into the line-up, standing, off whatever they were sitting on.
+          // Whoever is in this room goes back into the line-up, standing, off whatever
+          // they were sitting on. Tidying a room doesn't fetch anyone into it.
           places: Object.fromEntries(
-            prev.inScene.map((id, i) => [id, castHome(i, prev.inScene.length)])
+            Object.keys(prev.rooms[prev.lastRoom].places).map((id, i, all) => [
+              id,
+              castHome(i, all.length),
+            ])
           ),
         },
       },
@@ -511,7 +520,6 @@ export function App() {
           onHarvest={harvestPlot}
           characters={save.characters}
           activeId={save.activeId}
-          inScene={save.inScene}
           onToggleInScene={toggleInScene}
           onFocusCharacter={focusCharacter}
           onNewCharacter={() => {

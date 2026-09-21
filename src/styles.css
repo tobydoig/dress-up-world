@@ -1241,3 +1241,314 @@ button {
     animation: chew 0.9s ease-in-out infinite;
   }
 }
+
+/* ---------- idle fidgets ---------- */
+
+/*
+ * Pivots. The head and the hair behind it both carry an invisible full-canvas rect, so these
+ * percentages always mean the same point in avatar coordinates (100,145 is the base of the
+ * neck) however large a hat is being worn.
+ *
+ * The arms need no such help: an arm is one straight line from the shoulder outwards, so the
+ * shoulder is always a corner of its own box — top-left for the right arm, top-right for the
+ * left — whether it's a full sleeve or a short one. Keep these in step with ARM in
+ * bodyGeometry.ts.
+ */
+.av-head,
+.av-hair-back,
+.av-idle {
+  transform-box: fill-box;
+}
+
+.av-head,
+.av-hair-back {
+  transform-origin: 50% 33.7%;
+}
+
+.av-arm-l,
+.av-arm-r {
+  transform-box: fill-box;
+}
+
+.av-arm-l {
+  transform-origin: 100% 0%;
+}
+
+.av-arm-r {
+  transform-origin: 0% 0%;
+}
+
+/* Whole-body fidgets pivot and squash from the feet. */
+.av-idle {
+  transform-origin: 50% 88.4%;
+}
+
+/* --- looking about --- */
+
+.av-idle-look .av-head,
+.av-idle-look .av-hair-back {
+  animation: idle-look 3s ease-in-out both;
+}
+
+@keyframes idle-look {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  20%, 45% { transform: translateX(-4px) rotate(-5deg); }
+  70%, 88% { transform: translateX(4px) rotate(5deg); }
+}
+
+/* --- scratching the side of the head --- */
+
+/* -150deg is not arbitrary: the arm is about as long as the gap from shoulder to head, so at
+   that angle the hand genuinely arrives at the ear rather than somewhere near it. */
+.av-idle-scratch .av-arm-r {
+  animation: idle-scratch-arm 2s ease-in-out both;
+}
+
+@keyframes idle-scratch-arm {
+  0%, 100% { transform: rotate(0deg); }
+  18%, 82% { transform: rotate(-150deg); }
+  35% { transform: rotate(-158deg); }
+  50% { transform: rotate(-143deg); }
+  65% { transform: rotate(-156deg); }
+}
+
+.av-idle-scratch .av-head,
+.av-idle-scratch .av-hair-back {
+  animation: idle-tilt-right 2s ease-in-out both;
+}
+
+@keyframes idle-tilt-right {
+  0%, 100% { transform: rotate(0deg); }
+  25%, 80% { transform: rotate(6deg); }
+}
+
+/* --- a hand through the hair --- */
+
+.av-idle-hair .av-arm-l {
+  animation: idle-hair-arm 1.7s ease-in-out both;
+}
+
+@keyframes idle-hair-arm {
+  0%, 100% { transform: rotate(0deg); }
+  30% { transform: rotate(155deg); }
+  55% { transform: rotate(138deg); }
+  75% { transform: rotate(150deg); }
+}
+
+.av-idle-hair .av-head,
+.av-idle-hair .av-hair-back {
+  animation: idle-tilt-left 1.7s ease-in-out both;
+}
+
+@keyframes idle-tilt-left {
+  0%, 100% { transform: rotate(0deg); }
+  30%, 70% { transform: rotate(-6deg); }
+}
+
+/* --- picking a nose, because it was asked for --- */
+
+.av-idle-nose .av-arm-r {
+  animation: idle-nose-arm 1.9s ease-in-out both;
+}
+
+@keyframes idle-nose-arm {
+  0%, 100% { transform: rotate(0deg); }
+  22%, 78% { transform: rotate(-165deg); }
+  40% { transform: rotate(-171deg); }
+  58% { transform: rotate(-161deg); }
+}
+
+/* --- a wave at nobody in particular --- */
+
+.av-idle-wave .av-arm-r {
+  animation: idle-wave-arm 1.9s ease-in-out both;
+}
+
+@keyframes idle-wave-arm {
+  0%, 100% { transform: rotate(0deg); }
+  20%, 85% { transform: rotate(-110deg); }
+  38% { transform: rotate(-94deg); }
+  55% { transform: rotate(-122deg); }
+  70% { transform: rotate(-99deg); }
+}
+
+/* --- a couple of hops --- */
+
+.av-idle-bounce {
+  animation: idle-bounce 1.5s ease-in-out both;
+}
+
+@keyframes idle-bounce {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  12% { transform: translateY(0) scaleY(0.93); }
+  30% { transform: translateY(-24px) scaleY(1.05); }
+  48% { transform: translateY(0) scaleY(0.95); }
+  64% { transform: translateY(-14px) scaleY(1.03); }
+  82% { transform: translateY(0) scaleY(0.97); }
+}
+
+/* --- a little dance --- */
+
+.av-idle-dance {
+  animation: idle-dance 3s ease-in-out both;
+}
+
+@keyframes idle-dance {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  15% { transform: rotate(-6deg) translateY(-7px); }
+  35% { transform: rotate(5deg) translateY(0); }
+  55% { transform: rotate(-5deg) translateY(-7px); }
+  75% { transform: rotate(6deg) translateY(0); }
+}
+
+.av-idle-dance .av-arm-l {
+  animation: idle-dance-arm-l 3s ease-in-out both;
+}
+
+@keyframes idle-dance-arm-l {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(42deg); }
+  50% { transform: rotate(-22deg); }
+  75% { transform: rotate(36deg); }
+}
+
+.av-idle-dance .av-arm-r {
+  animation: idle-dance-arm-r 3s ease-in-out both;
+}
+
+@keyframes idle-dance-arm-r {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-42deg); }
+  50% { transform: rotate(22deg); }
+  75% { transform: rotate(-36deg); }
+}
+
+/* --- a stretch --- */
+
+.av-idle-stretch {
+  animation: idle-stretch 2.1s ease-in-out both;
+}
+
+@keyframes idle-stretch {
+  0%, 100% { transform: scaleY(1); }
+  40%, 70% { transform: scaleY(1.05); }
+}
+
+.av-idle-stretch .av-arm-l {
+  animation: idle-stretch-arm-l 2.1s ease-in-out both;
+}
+
+@keyframes idle-stretch-arm-l {
+  0%, 100% { transform: rotate(0deg); }
+  40%, 70% { transform: rotate(128deg); }
+}
+
+.av-idle-stretch .av-arm-r {
+  animation: idle-stretch-arm-r 2.1s ease-in-out both;
+}
+
+@keyframes idle-stretch-arm-r {
+  0%, 100% { transform: rotate(0deg); }
+  40%, 70% { transform: rotate(-128deg); }
+}
+
+/* --- shifting weight from one foot to the other --- */
+
+/* Slow on purpose. The same lean done quickly reads as a wobble; done over four seconds it
+   reads as weight. Rotating about the feet keeps them planted while the hips move. */
+.av-idle-shift {
+  animation: idle-shift 4s ease-in-out both;
+}
+
+@keyframes idle-shift {
+  0%, 100% { transform: rotate(0deg); }
+  25%, 45% { transform: rotate(-2.5deg); }
+  70%, 90% { transform: rotate(2.5deg); }
+}
+
+/* --- shuffling the feet --- */
+
+.av-idle-shuffle .av-foot-l {
+  animation: idle-shuffle-l 2.4s ease-in-out both;
+}
+
+@keyframes idle-shuffle-l {
+  0%, 100% { transform: translate(0, 0); }
+  18% { transform: translate(-4px, -2px); }
+  34% { transform: translate(-1px, 0); }
+}
+
+.av-idle-shuffle .av-foot-r {
+  animation: idle-shuffle-r 2.4s ease-in-out both;
+}
+
+@keyframes idle-shuffle-r {
+  0%, 100% { transform: translate(0, 0); }
+  58% { transform: translate(4px, -2px); }
+  74% { transform: translate(1px, 0); }
+}
+
+/* A touch of body sway, one beat behind each foot, so the scuff looks like it carried weight. */
+.av-idle-shuffle {
+  animation: idle-shuffle-body 2.4s ease-in-out both;
+}
+
+@keyframes idle-shuffle-body {
+  0%, 100% { transform: rotate(0deg); }
+  26% { transform: rotate(-1.4deg); }
+  66% { transform: rotate(1.4deg); }
+}
+
+/* --- wringing hands --- */
+
+/* An arm is a fixed length from the shoulder, so the only height at which the two hands can
+   actually meet is the waist — which is precisely where the torso is, and the torso is drawn
+   after the arms, so the hands themselves end up behind it. Swinging them all the way in
+   therefore buries the whole gesture. These stop a little short and wiggle a little wider, so
+   what is visible of the forearms carries the movement instead. */
+.av-idle-wring .av-arm-l {
+  animation: idle-wring-l 2.6s ease-in-out both;
+}
+
+@keyframes idle-wring-l {
+  0%, 100% { transform: rotate(0deg); }
+  15%, 85% { transform: rotate(-29deg); }
+  32% { transform: rotate(-21deg); }
+  50% { transform: rotate(-35deg); }
+  68% { transform: rotate(-22deg); }
+}
+
+.av-idle-wring .av-arm-r {
+  animation: idle-wring-r 2.6s ease-in-out both;
+}
+
+@keyframes idle-wring-r {
+  0%, 100% { transform: rotate(0deg); }
+  15%, 85% { transform: rotate(29deg); }
+  32% { transform: rotate(35deg); }
+  50% { transform: rotate(21deg); }
+  68% { transform: rotate(34deg); }
+}
+
+/* Head dips a little, as though watching what the hands are up to. */
+.av-idle-wring .av-head,
+.av-idle-wring .av-hair-back {
+  animation: idle-wring-head 2.6s ease-in-out both;
+}
+
+@keyframes idle-wring-head {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%, 75% { transform: translateY(3px) rotate(2deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-idle,
+  .av-idle .av-head,
+  .av-idle .av-hair-back,
+  .av-idle .av-arm-l,
+  .av-idle .av-arm-r,
+  .av-idle .av-foot-l,
+  .av-idle .av-foot-r {
+    animation: none;
+  }
+}

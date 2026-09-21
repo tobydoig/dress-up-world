@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import {
   ARM,
   EAR,
@@ -36,6 +36,91 @@ import type { AvatarLook } from "../data/wardrobe";
  */
 export type { Pose };
 
+/**
+ * The little things a character does when left alone, and how long each one runs for. They
+ * fire one at a time with a gap in between rather than looping: something that fidgets
+ * constantly reads as broken, something that fidgets now and then reads as alive.
+ */
+const IDLES: Record<string, number> = {
+  look: 3000,
+  shift: 4000,
+  shuffle: 2400,
+  wring: 2600,
+  scratch: 2000,
+  hair: 1700,
+  nose: 1900,
+  wave: 1900,
+  bounce: 1500,
+  dance: 3000,
+  stretch: 2100,
+};
+
+/**
+ * Weighted by repetition rather than by probabilities, because a list is easier to read than
+ * a table of numbers. The quiet ones fill most of it: someone standing about mostly shifts
+ * their weight and looks around, and only occasionally breaks into a dance.
+ */
+const STANDING = [
+  "look", "look", "look",
+  "shift", "shift", "shift",
+  "shuffle", "shuffle",
+  "wring", "wring",
+  "scratch", "hair", "nose", "wave",
+  "bounce", "dance", "stretch",
+];
+
+/** Sitting down rules out everything that needs feet on the floor. */
+const SEATED = ["look", "look", "wring", "wring", "scratch", "nose", "wave"];
+
+const GAP_MIN = 4000;
+const GAP_SPREAD = 6000;
+
+/**
+ * Picks a fidget, plays it, waits, picks another. Lying down gets none at all — they are
+ * having a rest.
+ */
+function useIdle(active: boolean, pose: Pose): string | null {
+  const [idle, setIdle] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!active || pose === "lie") {
+      setIdle(null);
+      return;
+    }
+    const choices = pose === "sit" ? SEATED : STANDING;
+    let timer = 0;
+
+    const schedule = (delay: number) => {
+      timer = window.setTimeout(() => {
+        const pick = choices[Math.floor(Math.random() * choices.length)];
+        setIdle(pick);
+        timer = window.setTimeout(() => {
+          setIdle(null);
+          schedule(GAP_MIN + Math.random() * GAP_SPREAD);
+        }, IDLES[pick]);
+      }, delay);
+    };
+
+    // The first wait is random so that two characters sharing a room don't fidget in lockstep.
+    schedule(Math.random() * GAP_SPREAD);
+    return () => clearTimeout(timer);
+  }, [active, pose]);
+
+  return idle;
+}
+
+/**
+ * An invisible rect covering the whole canvas.
+ *
+ * A CSS transform on an SVG group pivots around that group's own bounding box, which moves
+ * about as hats and hairstyles change size — a head would tilt around a different point
+ * depending on whether it was wearing a crown. Pinning the box to the full canvas makes a
+ * percentage transform-origin mean the same place in avatar coordinates whatever is worn.
+ */
+function pin(): ReactElement {
+  return <rect x={0} y={0} width={200} height={430} fill="none" />;
+}
+
 export function AvatarLayers({
   look,
   uid = "main",
@@ -64,19 +149,29 @@ export function AvatarLayers({
   const pop = animate ? "av-pop" : undefined;
 
   const seated = pose === "sit";
+  const idle = useIdle(animate, pose);
 
   return (
-    <g className={animate && !seated ? "av-breathe" : undefined}>
-      {hair.back && (
-        <g key={"hb-" + look.hairId + look.hairColour} className={pop}>
-          {hair.back({ colour: look.hairColour })}
-        </g>
-      )}
+    // Three nested groups, because each carries its own transform and they would otherwise
+    // fight over it: the outer one is whatever fidget is running, then breathing, then the
+    // character. Only the whole-body fidgets touch the outer group; the rest reach inside.
+    <g className={idle ? "av-idle av-idle-" + idle : undefined}>
+      {idle && pin()}
+      <g className={animate && !seated ? "av-breathe" : undefined}>
+        {hair.back && (
+          <g className="av-hair-back">
+            {pin()}
+            <g key={"hb-" + look.hairId + look.hairColour} className={pop}>
+              {hair.back({ colour: look.hairColour })}
+            </g>
+          </g>
+        )}
 
       {/* Bare body underneath everything it wears. */}
       <g key={"body-" + look.skin}>
         <Legs skin={look.skin} pose={pose} />
         <line
+          className="av-arm-l"
           x1={ARM.left.x1}
           y1={ARM.left.y1}
           x2={ARM.left.x2}
@@ -86,6 +181,7 @@ export function AvatarLayers({
           strokeLinecap="round"
         />
         <line
+          className="av-arm-r"
           x1={ARM.right.x1}
           y1={ARM.right.y1}
           x2={ARM.right.x2}
@@ -116,7 +212,11 @@ export function AvatarLayers({
         </g>
       )}
 
-      {/* Head goes over the clothes so collars and hoods tuck in behind it. */}
+      {/* Head goes over the clothes so collars and hoods tuck in behind it. Everything from
+          here to the glasses turns as one when the head does — jewellery is deliberately
+          outside it, since a necklace sits on the chest and shouldn't swing with the chin. */}
+      <g className="av-head">
+      {pin()}
       <g key={"head-" + look.skin}>
         <ellipse cx={EAR.leftCx} cy={EAR.cy} rx={EAR.rx} ry={EAR.ry} fill={shade(look.skin, -18)} />
         <ellipse cx={EAR.rightCx} cy={EAR.cy} rx={EAR.rx} ry={EAR.ry} fill={shade(look.skin, -18)} />
@@ -165,12 +265,14 @@ export function AvatarLayers({
           {GLASSES_STYLES[look.glassesId]({ colour: look.glassesColour })}
         </g>
       )}
+      </g>
 
       {look.jewelsId && JEWEL_STYLES[look.jewelsId] && (
         <g key={"jw-" + look.jewelsId + look.jewelsColour} className={pop}>
           {JEWEL_STYLES[look.jewelsId]({ colour: look.jewelsColour })}
         </g>
       )}
+      </g>
     </g>
   );
 }

@@ -26,6 +26,14 @@ export interface GarmentProps {
   pose: Pose;
 }
 
+/**
+ * Sleeves are keyed "sl"/"sr" everywhere, so that key also decides which arm's class they
+ * carry. A sleeve has to swing with the arm inside it, and the two are drawn in different
+ * groups — the bare arm with the body, the sleeve with the top — so they can't share a
+ * wrapper and have to be animated as a matched pair instead.
+ */
+const SLEEVE_ARM: Record<string, string> = { sl: "av-arm-l", sr: "av-arm-r" };
+
 function limb(
   line: Segment,
   width: number,
@@ -35,6 +43,7 @@ function limb(
   return (
     <line
       key={key}
+      className={key ? SLEEVE_ARM[key] : undefined}
       x1={line.x1}
       y1={line.y1}
       x2={line.x2}
@@ -359,8 +368,13 @@ function pair(pose: Pose, render: (key: string) => ReactElement): ReactElement {
         [foot.leftCx, -1],
         [foot.rightCx, 1],
       ] as Array<[number, number]>).map(([cx, dir]) => (
-        <g key={cx} transform={"translate(" + cx + " " + foot.cy + ") scale(" + dir + " 1) translate(-4 0)"}>
-          {render("s" + cx)}
+        // The class goes on an outer wrapper rather than on the positioned group: a CSS
+        // transform replaces an element's transform attribute outright, so animating this
+        // group directly would throw the shoe back to the origin.
+        <g key={cx} className={dir < 0 ? "av-foot-l" : "av-foot-r"}>
+          <g transform={"translate(" + cx + " " + foot.cy + ") scale(" + dir + " 1) translate(-4 0)"}>
+            {render("s" + cx)}
+          </g>
         </g>
       ))}
     </g>

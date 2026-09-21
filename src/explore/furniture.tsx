@@ -1485,6 +1485,42 @@ export const FURNITURE: Record<string, FurnitureRender> = {
   vegStall: () => stall(104, "#5ed64a", STALL_STOCK.vegStall),
   bakeryStall: () => stall(202, "#ff9040", STALL_STOCK.bakeryStall),
   dairyStall: () => stall(300, "#3aa0ff", STALL_STOCK.dairyStall),
+
+  /* The nursery stall, where everything a baby needs comes from. */
+  babyStall: () => stall(150, "#ff8fc0", STALL_STOCK.babyStall),
+
+  /* Somewhere to put a baby down. Only a baby fits — see SEATS. */
+  cot: () => (
+    <g>
+      {hitPad(30, 150, 120, 82)}
+      <rect x={30} y={168} width={120} height={14} rx={6} fill={WOOD} />
+      <rect x={34} y={182} width={112} height={18} rx={7} fill="#ffdf7a" />
+      <rect x={40} y={176} width={34} height={12} rx={6} fill="#fffdfa" />
+      {/* Bars. A cot without them is a very small bed. */}
+      {[40, 58, 76, 94, 112, 130].map((x) => (
+        <rect key={x} x={x} y={150} width={5} height={30} rx={2.5} fill={shade(WOOD, 16)} />
+      ))}
+      <rect x={30} y={146} width={120} height={7} rx={3.5} fill={WOOD} />
+      <rect x={34} y={200} width={10} height={32} rx={4} fill={WOOD_DARK} />
+      <rect x={136} y={200} width={10} height={32} rx={4} fill={WOOD_DARK} />
+    </g>
+  ),
+
+  /* And somewhere to wheel one about in. */
+  pram: () => (
+    <g>
+      {hitPad(228, 146, 130, 86)}
+      <path d="M240,196 q4,-44 52,-44 h50 v44 z" fill="#5a3b9c" />
+      <path d="M248,192 q4,-36 44,-36 h44 v36 z" fill="#7fb6ff" />
+      <rect x={236} y={192} width={112} height={12} rx={6} fill="#3b2470" />
+      <rect x={252} y={182} width={40} height={12} rx={6} fill="#fffdfa" />
+      <path d="M344,192 q16,-26 4,-40" stroke="#3b2470" strokeWidth={6} fill="none" strokeLinecap="round" />
+      <circle cx={258} cy={216} r={15} fill="#2a2a40" />
+      <circle cx={258} cy={216} r={6} fill="#8b93b5" />
+      <circle cx={330} cy={216} r={15} fill="#2a2a40" />
+      <circle cx={330} cy={216} r={6} fill="#8b93b5" />
+    </g>
+  ),
 };
 
 /**

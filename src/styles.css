@@ -2231,3 +2231,35 @@ button {
     transition: none;
   }
 }
+
+/* ---------- an upset baby ---------- */
+
+/* A judder rather than a wail: enough to catch the eye across a room, not enough to be
+   distressing. Fidgets are off while it cries — it has one thing on its mind. */
+.bb-crying {
+  transform-box: fill-box;
+  transform-origin: 50% 88%;
+  animation: bb-crying 0.6s ease-in-out infinite;
+}
+
+@keyframes bb-crying {
+  0%, 100% { transform: rotate(-1.6deg); }
+  50% { transform: rotate(1.6deg); }
+}
+
+.bb-tear {
+  animation: bb-tear 1.4s ease-in infinite;
+}
+
+@keyframes bb-tear {
+  0% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(22px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-crying,
+  .bb-tear {
+    animation: none;
+  }
+}

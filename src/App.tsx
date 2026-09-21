@@ -17,6 +17,7 @@ import {
   placeFurniture,
   type AvatarPose,
   type GameSave,
+  type BabyWant,
   type CharacterKind,
   type PlacedFurniture,
   type RoomState,
@@ -310,7 +311,12 @@ export function App() {
     id: string,
     x: number,
     y: number,
-    settle?: { pose: AvatarPose; seat: string | null; seatSpot?: number; heldBy?: string | null }
+    settle?: {
+      pose: AvatarPose;
+      seat: string | null;
+      seatSpot?: number;
+      heldBy?: string | null;
+    }
   ) {
     updateRoom((room) => {
       const was = room.places[id];
@@ -325,6 +331,7 @@ export function App() {
             seat: settle ? settle.seat : was?.seat ?? null,
             seatSpot: settle ? settle.seatSpot ?? 0 : was?.seatSpot ?? 0,
             heldBy: settle ? settle.heldBy ?? null : was?.heldBy ?? null,
+            wants: was?.wants ?? null,
           },
         },
       };
@@ -332,6 +339,15 @@ export function App() {
   }
 
   /** Put everything back where it started, for when the room gets into a state. */
+  /** What a baby is crying for, or null once it has been settled. */
+  function setBabyWants(id: string, wants: BabyWant | null) {
+    updateRoom((room) => {
+      const was = room.places[id];
+      if (!was || was.wants === wants) return room;
+      return { ...room, places: { ...room.places, [id]: { ...was, wants } } };
+    });
+  }
+
   function tidyUp() {
     // Written against prev rather than the render's own save, so who is out is read at the
     // moment the room is rebuilt rather than whenever this handler was made.
@@ -534,6 +550,7 @@ export function App() {
           onUpdateFurniture={updateFurniture}
           onRemoveFurniture={removeFurniture}
           onMoveAvatar={moveAvatar}
+          onBabyWants={setBabyWants}
           onTidyUp={tidyUp}
           onCycleTime={cycleTime}
           onBuy={buyThing}

@@ -71,6 +71,66 @@ function bowl(colour: string): ReactElement {
 
 export const THINGS: Record<string, Thing> = {
   // ---------------- fruit ----------------
+  /* What a baby needs. Bought from the nursery stall like everything else. */
+  bottle: {
+    id: "bottle",
+    name: "Bottle",
+    taste: "yum",
+    art: () => (
+      <g>
+        <path d="M-9,-2 h18 v16 a9,9 0 0 1 -18,0 z" fill="#fffdfa" />
+        <path d="M-9,6 h18 v8 a9,9 0 0 1 -18,0 z" fill="#ffe9c4" />
+        <rect x={-7} y={-8} width={14} height={7} rx={3} fill="#7fd4ff" />
+        <path d="M-3,-8 q3,-9 6,0 z" fill="#ffc2dc" />
+      </g>
+    ),
+  },
+
+  "purée": {
+    id: "purée",
+    name: "Baby food",
+    taste: "yum",
+    art: () => (
+      <g>
+        <rect x={-9} y={-6} width={18} height={20} rx={4} fill="#ffdf7a" />
+        <rect x={-10} y={-10} width={20} height={6} rx={3} fill="#5ed64a" />
+        <rect x={-6} y={0} width={12} height={9} rx={2} fill="#fffdfa" opacity={0.7} />
+        <circle cx={-1} cy={4.5} r={2.6} fill="#ff8fc0" />
+      </g>
+    ),
+  },
+
+  rusk: {
+    id: "rusk",
+    name: "Rusk",
+    taste: "yum",
+    art: () => (
+      <g>
+        <rect x={-11} y={-7} width={22} height={15} rx={5} fill="#e0b476" />
+        <rect x={-8} y={-4} width={16} height={9} rx={4} fill="#efd0a2" />
+        {/* A bite out of one corner, which is the only state a rusk is ever in. */}
+        <circle cx={11} cy={-3} r={5} fill="#3b2470" opacity={0} />
+        <path d="M6,-7 a5,5 0 0 0 5,5 v-5 z" fill="#c9995c" />
+      </g>
+    ),
+  },
+
+  dummy: {
+    id: "dummy",
+    name: "Dummy",
+    // Not for eating. A baby settles with it; anybody else makes a face.
+    taste: "yuck",
+    art: () => (
+      <g>
+        <circle cx={0} cy={2} r={9} fill="#ff8fc0" />
+        <circle cx={0} cy={2} r={4.5} fill="#ffc2dc" />
+        <path d="M-9,2 a9,9 0 0 1 18,0 z" fill="#ffa8cf" />
+        <path d="M-4,-7 q4,-8 8,0 q-4,3 -8,0 z" fill="#ffdf7a" />
+        <circle cx={0} cy={13} r={4} fill="#ffdf7a" />
+      </g>
+    ),
+  },
+
   apple: {
     id: "apple",
     name: "Apple",
@@ -773,6 +833,7 @@ export function stillMissing(ids: string[]): number | null {
 
 /** Which stall sells what. Also decides what is drawn on the front of each stall. */
 export const STALL_STOCK: Record<string, string[]> = {
+  babyStall: ["bottle", "purée", "rusk", "dummy"],
   fruitStall: ["apple", "banana", "strawberry", "lemon"],
   vegStall: ["carrot", "tomato", "potato", "lettuce"],
   bakeryStall: ["bread", "flour", "sugar", "cocoa"],

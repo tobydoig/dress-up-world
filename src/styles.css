@@ -1920,3 +1920,162 @@ button {
     animation: none;
   }
 }
+
+/* ---------- a baby's fidgets ---------- */
+
+/*
+ * Same arrangement as the grown-up ones: every pivot is a fraction of a full-canvas box the
+ * baby carries, so a curl of hair or a wider babygro can't move where a limb turns from.
+ */
+.bb-idle,
+.bb-head,
+.bb-legs,
+.bb-arm-l,
+.bb-arm-r {
+  transform-box: fill-box;
+}
+
+.bb-idle {
+  transform-origin: 50% 88%;
+}
+
+.bb-head {
+  transform-origin: 50% 82%;
+}
+
+.bb-legs {
+  transform-origin: 50% 80%;
+}
+
+.bb-arm-l {
+  transform-origin: 29% 81%;
+}
+
+.bb-arm-r {
+  transform-origin: 71% 81%;
+}
+
+/* --- kicking both legs --- */
+
+.bb-idle-kick .bb-legs {
+  animation: bb-kick 1.8s ease-in-out both;
+}
+
+@keyframes bb-kick {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  20% { transform: translateY(-5px) rotate(-4deg); }
+  45% { transform: translateY(-1px) rotate(3deg); }
+  70% { transform: translateY(-5px) rotate(-3deg); }
+}
+
+/* --- reaching up for something --- */
+
+.bb-idle-reach .bb-arm-l {
+  animation: bb-reach-l 2s ease-in-out both;
+}
+
+.bb-idle-reach .bb-arm-r {
+  animation: bb-reach-r 2s ease-in-out both;
+}
+
+@keyframes bb-reach-l {
+  0%, 100% { transform: rotate(0deg); }
+  35%, 70% { transform: rotate(-58deg); }
+}
+
+@keyframes bb-reach-r {
+  0%, 100% { transform: rotate(0deg); }
+  35%, 70% { transform: rotate(58deg); }
+}
+
+.bb-idle-reach .bb-head {
+  animation: bb-look-up 2s ease-in-out both;
+}
+
+@keyframes bb-look-up {
+  0%, 100% { transform: translateY(0); }
+  40%, 70% { transform: translateY(-3px); }
+}
+
+/* --- a wobble, the way a sitting baby does --- */
+
+.bb-idle-wobble {
+  animation: bb-wobble 2.4s ease-in-out both;
+}
+
+@keyframes bb-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  60% { transform: rotate(5deg); }
+  85% { transform: rotate(-2deg); }
+}
+
+/* --- looking about --- */
+
+.bb-idle-look .bb-head {
+  animation: bb-look 2.6s ease-in-out both;
+}
+
+@keyframes bb-look {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  25%, 42% { transform: rotate(-9deg) translateX(-4px); }
+  65%, 85% { transform: rotate(9deg) translateX(4px); }
+}
+
+/* --- a yawn: the head tips back and the whole baby sags after it --- */
+
+.bb-idle-yawn .bb-head {
+  animation: bb-yawn 2.2s ease-in-out both;
+}
+
+@keyframes bb-yawn {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  35%, 60% { transform: rotate(-7deg) scale(1.04); }
+}
+
+/* --- being carried: whoever holds it does the rocking, this just settles --- */
+
+.bb-held .bb-legs,
+.bb-held .bb-arm-l,
+.bb-held .bb-arm-r {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-idle,
+  .bb-idle .bb-head,
+  .bb-idle .bb-legs,
+  .bb-idle .bb-arm-l,
+  .bb-idle .bb-arm-r {
+    animation: none;
+  }
+}
+
+/* ---------- carrying a baby ---------- */
+
+/*
+ * The rocking belongs to whoever is holding, not to the baby: a baby swaying on its own
+ * looks like it is being jostled, while a grown-up swaying with one in her arms reads as
+ * exactly what it is. Slow — this is soothing, not jiggling.
+ */
+.av-rocking {
+  transform-box: fill-box;
+  transform-origin: 50% 96%;
+  animation: av-rock 3.4s ease-in-out infinite;
+}
+
+@keyframes av-rock {
+  0%,
+  100% {
+    transform: rotate(-2.2deg);
+  }
+  50% {
+    transform: rotate(2.2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av-rocking {
+    animation: none;
+  }
+}

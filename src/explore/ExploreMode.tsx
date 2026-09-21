@@ -10,6 +10,7 @@ import {
   type ReactElement,
 } from "react";
 import { Avatar, AvatarLayers } from "../avatar/Avatar";
+import { BabyLayers } from "../avatar/Baby";
 import { HEAD } from "../avatar/bodyGeometry";
 import {
   CATALOGUE_CTX,
@@ -52,6 +53,7 @@ import {
   BASKET_LIMIT,
   MAX_CAST,
   type AvatarPose,
+  type CharacterKind,
   type Placement,
   type PlacedFurniture,
   type RoomState,
@@ -294,6 +296,13 @@ function pieceTransform(dx: number, dy: number): string {
 const AVATAR_SCALE = 0.47;
 
 /**
+ * Where a carried baby sits, measured from the feet of whoever is carrying it — in the crook
+ * of an arm, at about chest height and a little to one side. How near she has to be dropped
+ * for it to count as being picked up, too, which is generous: she is aiming at a person.
+ */
+const CARRY = { dx: 20, dy: -96, scale: 0.72, snap: 92 };
+
+/**
  * Breathing and blinking start the moment the element appears, so three characters who came
  * out together would rise and fall as one animal. Spreading them by their place in the line
  * rather than by anything hashed guarantees they are as far apart as three can be — and the
@@ -309,11 +318,11 @@ function phaseOf(index: number, count: number): { breathe: number; blink: number
 }
 
 
-function characterTransform(x: number, y: number, pose: AvatarPose): string {
+function characterTransform(x: number, y: number, pose: AvatarPose, scale = 1): string {
   return (
     "translate(" + x + " " + y + ")" +
     (pose === "lie" ? " rotate(-90)" : "") +
-    " scale(" + AVATAR_SCALE + ") translate(-100 -380)"
+    " scale(" + AVATAR_SCALE * scale + ") translate(-100 -380)"
   );
 }
 
@@ -452,10 +461,13 @@ const Piece = memo(function Piece({
 /** Memoised for the same reason: dragging the furniture must not redraw the whole character. */
 const Character = memo(function Character({
   id,
+  kind,
   look,
   uid,
   x,
   y,
+  scale,
+  rocking,
   pose,
   phase,
   chewing,
@@ -464,11 +476,16 @@ const Character = memo(function Character({
   onGrab,
 }: {
   id: string;
+  kind: CharacterKind;
   look: AvatarLook;
   uid: string;
   x: number;
   y: number;
   pose: AvatarPose;
+  /** Smaller while carried, so a baby in arms isn't the size of one on the floor. */
+  scale: number;
+  /** Carrying a baby: sway on the spot, and leave the ordinary fidgets alone. */
+  rocking: boolean;
   /** How far into each of the two idle loops this one starts. See `phaseOf`. */
   phase: { breathe: number; blink: number };
   chewing: boolean;
@@ -480,7 +497,7 @@ const Character = memo(function Character({
     <g
       className={"draggable character" + (dragging ? " is-dragging" : "")}
       data-avatar={id}
-      transform={characterTransform(x, y, pose)}
+      transform={characterTransform(x, y, pose, scale)}
       style={
         {
           ["--phase-breathe"]: -phase.breathe.toFixed(2) + "s",
@@ -489,7 +506,16 @@ const Character = memo(function Character({
       }
       onPointerDown={onGrab}
     >
-      <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} mouthOpen={mouthOpen} />
+      {/* The rocking goes on a group of its own, never on the positioned one above: a CSS
+          transform replaces an element's transform attribute outright, and putting it up
+          there throws the whole character back to the corner of the room. */}
+      <g className={rocking ? "av-rocking" : undefined}>
+        {kind === "baby" ? (
+          <BabyLayers look={look} />
+        ) : (
+          <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} mouthOpen={mouthOpen} />
+        )}
+      </g>
     </g>
   );
 });
@@ -722,7 +748,7 @@ export function ExploreMode({
     id: string,
     x: number,
     y: number,
-    settle?: { pose: AvatarPose; seat: string | null }
+    settle?: { pose: AvatarPose; seat: string | null; heldBy?: string | null }
   ) => void;
   onTidyUp: () => void;
   onCycleTime: () => void;
@@ -787,14 +813,13 @@ export function ExploreMode({
    * Read straight off the room, because being in a room is having a place in it — there is
    * no second list that could disagree with this one.
    */
-  const cast: Array<{ id: string; look: AvatarLook; place: Placement }> = Object.entries(
-    roomState.places
-  )
+  type CastMember = { id: string; kind: CharacterKind; look: AvatarLook; place: Placement };
+  const cast: CastMember[] = Object.entries(roomState.places)
     .map(([id, place]) => {
       const character = characters.find((c) => c.id === id);
-      return character ? { id, look: character.look, place } : null;
+      return character ? { id, kind: character.kind, look: character.look, place } : null;
     })
-    .filter((member): member is { id: string; look: AvatarLook; place: Placement } => member !== null);
+    .filter((member): member is CastMember => member !== null);
 
   const castRef = useRef(cast);
   castRef.current = cast;
@@ -1271,6 +1296,35 @@ export function ExploreMode({
     playPop();
   }
 
+  /**
+   * Where a member is actually drawn. A carried baby is drawn on whoever has it rather than
+   * where it was last put down, so it travels with them — including while they are being
+   * dragged, which the post-render pass then keeps up with.
+   */
+  function placeOfMember(member: CastMember): { x: number; y: number } {
+    if (!member.place.heldBy) return member.place;
+    const carrier = cast.find((m) => m.id === member.place.heldBy);
+    if (!carrier) return member.place;
+    return { x: carrier.place.x + CARRY.dx, y: carrier.place.y + CARRY.dy };
+  }
+
+  /**
+   * What decides who is painted over whom. Normally how far down the room they stand, so
+   * whoever is nearest the front is in front. A carried baby is the exception: it is drawn
+   * at chest height, which would sort it behind the very person holding it, so it borrows
+   * their depth and takes the place just after them.
+   */
+  function depthOf(member: CastMember): number {
+    if (!member.place.heldBy) return member.place.y;
+    const carrier = cast.find((m) => m.id === member.place.heldBy);
+    return carrier ? carrier.place.y + 0.5 : member.place.y;
+  }
+
+  /** The baby in somebody's arms, if they have one. */
+  function babyOf(carrier: string): CastMember | undefined {
+    return castRef.current.find((m) => m.kind === "baby" && m.place.heldBy === carrier);
+  }
+
   /** Who is sitting or lying on a given piece, if anyone. */
   function riderOf(furnitureId: string): string | null {
     return castRef.current.find((member) => member.place.seat === furnitureId)?.id ?? null;
@@ -1279,6 +1333,33 @@ export function ExploreMode({
   /** After a character is dropped, sit or lie them on whatever they landed on. */
   function settleAvatar(who: string, x: number, y: number) {
     const current = roomStateRef.current;
+
+    const me = castRef.current.find((m) => m.id === who);
+    if (me?.kind === "baby") {
+      // Put down where she let go, unless that was on top of somebody — in which case they
+      // pick it up. Dragging a baby that is already being carried always puts it down, the
+      // same way dragging a seated character always gets them off the chair.
+      if (me.place.heldBy) {
+        onMoveAvatar(who, x, y, { pose: "stand", seat: null, heldBy: null });
+        playPop();
+        return;
+      }
+      let arms: string | null = null;
+      let nearest = CARRY.snap;
+      for (const member of castRef.current) {
+        if (member.kind === "baby" || babyOf(member.id)) continue;
+        const gap = Math.hypot(x - member.place.x, y - (member.place.y - 60));
+        if (gap < nearest) {
+          nearest = gap;
+          arms = member.id;
+        }
+      }
+      if (arms) {
+        onMoveAvatar(who, x, y, { pose: "stand", seat: null, heldBy: arms });
+        playSparkle();
+      }
+      return;
+    }
 
     // Dragging someone who is already sitting or lying always frees them. Otherwise the snap
     // radius grabs them straight back onto the seat and there's no way off it.
@@ -1736,15 +1817,18 @@ export function ExploreMode({
             {/* Drawn back to front, so whoever is standing nearest the front of the room is
                 the one in front — and the one your finger lands on. */}
             {[...cast]
-              .sort((a, b) => a.place.y - b.place.y)
+              .sort((a, b) => depthOf(a) - depthOf(b))
               .map((member, index) => (
                 <Character
                   key={member.id}
                   id={member.id}
+                  kind={member.kind}
                   look={member.look}
                   uid={"room-" + roomId + "-" + member.id}
-                  x={member.place.x}
-                  y={member.place.y}
+                  x={placeOfMember(member).x}
+                  y={placeOfMember(member).y}
+                  scale={member.place.heldBy ? CARRY.scale : 1}
+                  rocking={member.kind !== "baby" && cast.some((m) => m.place.heldBy === member.id)}
                   pose={member.place.pose}
                   phase={phaseOf(index, cast.length)}
                   chewing={chewingId === member.id}
@@ -2081,12 +2165,18 @@ export function ExploreMode({
                       }}
                     >
                       <span className="item-art">
-                        <Avatar
-                          look={c.look}
-                          uid={"cast-" + c.id}
-                          animate={false}
-                          crop="10 6 180 220"
-                        />
+                        {c.kind === "baby" ? (
+                          <svg viewBox="40 250 120 140" className="thing-svg">
+                            <BabyLayers look={c.look} animate={false} />
+                          </svg>
+                        ) : (
+                          <Avatar
+                            look={c.look}
+                            uid={"cast-" + c.id}
+                            animate={false}
+                            crop="10 6 180 220"
+                          />
+                        )}
                         {/* Two separate things, so they can be read separately: a tick for
                             "out here with me", a dress for the one the Dress up button would
                             take you to. Since she chooses who comes out, the one she is

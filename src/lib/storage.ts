@@ -3,9 +3,14 @@ import { ALL_FURNITURE_IDS, ROOMS, ROOM_ORDER, type RoomId } from "../data/rooms
 import { ALL_THING_IDS } from "../data/things";
 import { CROPS } from "../data/growing";
 
+/** A grown-up character, or a baby. Babies are placed and dressed the same way; they are
+ *  simply drawn differently and can be picked up. */
+export type CharacterKind = "child" | "baby";
+
 export interface SavedCharacter {
   id: string;
   name: string;
+  kind: CharacterKind;
   look: AvatarLook;
 }
 
@@ -71,6 +76,11 @@ export interface Placement {
    * the character is suddenly sitting on nothing. Remembering the piece makes it explicit.
    */
   seat: string | null;
+  /**
+   * A baby only: whose arms it is in. Kept on the baby rather than on whoever is carrying
+   * it, so a baby has exactly one answer to "where are you" however many arms are about.
+   */
+  heldBy: string | null;
 }
 
 export interface RoomState {
@@ -119,6 +129,7 @@ export function castHome(index: number, count: number): Placement {
     y: AVATAR_HOME.y,
     pose: "stand",
     seat: null,
+    heldBy: null,
   };
 }
 
@@ -256,6 +267,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
       y?: unknown;
       pose?: unknown;
       seat?: unknown;
+      heldBy?: unknown;
     }): Placement => {
       const pose: AvatarPose = from.pose === "sit" || from.pose === "lie" ? from.pose : "stand";
       return {
@@ -264,6 +276,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
         pose,
         // A seat that is no longer in the room, or that nobody is on, is no seat at all.
         seat: pose !== "stand" && onFloor(from.seat) ? (from.seat as string) : null,
+        heldBy: typeof from.heldBy === "string" ? from.heldBy : null,
       };
     };
 
@@ -319,6 +332,7 @@ export function loadSave(): GameSave {
             }
             return {
               id: c.id,
+              kind: (c.kind === "baby" ? "baby" : "child") as CharacterKind,
               name:
                 typeof c.name === "string" && c.name.trim()
                   ? c.name.trim().slice(0, NAME_MAX)

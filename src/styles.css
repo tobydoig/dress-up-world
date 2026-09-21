@@ -13,6 +13,16 @@
   --mint: #2ed6b8;
   --line: rgba(255, 255, 255, 0.14);
 
+  /*
+   * Inside .room-stage. The scene has to sit above the night wash, and putting it there also
+   * put it above every other absolutely positioned child that didn't name a layer — which
+   * silently swallowed the room arrows, the page dots and the basket, because an SVG that
+   * covers the stage takes the taps meant for them.
+   */
+  --layer-wash: 0;
+  --layer-scene: 1;
+  --layer-over-scene: 2;
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
@@ -486,6 +496,7 @@ button {
 
 .room-arrow {
   position: absolute;
+  z-index: var(--layer-over-scene);
   top: 50%;
   transform: translateY(-50%);
   width: 52px;
@@ -521,6 +532,7 @@ button {
 
 .room-dots {
   position: absolute;
+  z-index: var(--layer-over-scene);
   bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
@@ -829,6 +841,7 @@ button {
    the drawer — and it only appears once there is something in it. */
 .basket {
   position: absolute;
+  z-index: var(--layer-over-scene);
   left: 8px;
   bottom: 22px;
   max-width: calc(100% - 132px);
@@ -886,6 +899,7 @@ button {
    and letting it take events would break the drag the moment the finger crossed it. */
 .bin {
   position: absolute;
+  z-index: var(--layer-over-scene);
   right: 10px;
   bottom: 18px;
   width: 106px;
@@ -928,6 +942,7 @@ button {
 
 .reaction {
   position: absolute;
+  z-index: var(--layer-over-scene);
   left: 50%;
   top: 16%;
   padding: 10px 18px;
@@ -1670,7 +1685,7 @@ button {
 .night-wash {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: var(--layer-wash);
   pointer-events: none;
   transition: opacity 1400ms cubic-bezier(0.45, 0.05, 0.35, 1);
 }
@@ -1678,7 +1693,7 @@ button {
 /* The scene is not positioned, so without this the wash above would paint over it. */
 .room-slide {
   position: relative;
-  z-index: 1;
+  z-index: var(--layer-scene);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1726,10 +1741,10 @@ button {
   position: relative;
 }
 
-.item-tick {
+.item-tick,
+.item-dress {
   position: absolute;
   top: -3px;
-  right: -3px;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -1742,6 +1757,16 @@ button {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
 }
 
+.item-tick {
+  right: -3px;
+}
+
+/* The other corner, so a character who is both out and being dressed can say both. */
+.item-dress {
+  left: -3px;
+  background: var(--pink);
+}
+
 /* Each character starts their breathing and blinking at their own moment, so three of them
    standing together don't rise and fall as one animal. */
 .av-breathe {
@@ -1750,4 +1775,49 @@ button {
 
 .av-blink {
   animation-delay: var(--phase-blink, 0s);
+}
+
+/* ---------- naming a character ---------- */
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 10px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 2px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.name-row:focus-within {
+  border-color: var(--yellow);
+}
+
+.name-icon {
+  flex: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 0;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ink);
+  background: none;
+  border: none;
+  outline: none;
+  /* The one field in the game, and the only place text may be selected. */
+  user-select: text;
+}
+
+.name-input::placeholder {
+  font-weight: 700;
+  color: var(--ink-dim);
+  opacity: 0.85;
 }

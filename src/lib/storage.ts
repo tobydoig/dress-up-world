@@ -104,6 +104,12 @@ export const AVATAR_HOME = { x: 200, y: 408 };
  */
 export const MAX_CAST = 3;
 
+/**
+ * As long a name as fits a character card without being cut off. Long enough for the names a
+ * four-year-old actually picks, which are her friends' and her toys'.
+ */
+export const NAME_MAX = 14;
+
 /** Side by side, centred on the spot a lone character has always stood on. */
 export const CAST_GAP = 86;
 
@@ -314,7 +320,10 @@ export function loadSave(): GameSave {
             }
             return {
               id: c.id,
-              name: typeof c.name === "string" && c.name ? c.name : "My character",
+              name:
+                typeof c.name === "string" && c.name.trim()
+                  ? c.name.trim().slice(0, NAME_MAX)
+                  : "My character",
               look,
             };
           })
@@ -341,8 +350,10 @@ export function loadSave(): GameSave {
     const inScene = (Array.isArray(parsed.inScene) ? parsed.inScene : [])
       .filter((id): id is string => typeof id === "string" && known.has(id))
       .filter((id, i, all) => all.indexOf(id) === i);
-    // Whoever "Dress up" would edit has to be somebody she can see.
-    if (activeId && !inScene.includes(activeId)) inScene.unshift(activeId);
+    // Who is out is hers to choose, and the one she is dressing needn't be one of them — but
+    // a save with characters in it and nobody out would open on an empty room, which reads
+    // as the game having lost them.
+    if (inScene.length === 0 && activeId) inScene.push(activeId);
     const lastRoom = ROOM_ORDER.includes(parsed.lastRoom as RoomId) ? (parsed.lastRoom as RoomId) : "playroom";
     const savedTime = (parsed.timeOfDay as string) === LEGACY_DUSK ? "night" : parsed.timeOfDay;
     const timeOfDay = TIME_ORDER.includes(savedTime as TimeOfDay) ? (savedTime as TimeOfDay) : "day";

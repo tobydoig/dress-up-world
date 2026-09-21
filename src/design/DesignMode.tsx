@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Avatar } from "../avatar/Avatar";
 import { COVERS_LEGS } from "../avatar/clothingParts";
 import { CATEGORIES, type AvatarLook, type CategoryId } from "../data/wardrobe";
-import type { SavedCharacter } from "../lib/storage";
+import { NAME_MAX, type SavedCharacter } from "../lib/storage";
 import { playPop, playSparkle, playSwatch, playTap } from "../lib/sound";
 
 /** Each tab previews the part of the body it changes, so thumbnails aren't tiny full bodies. */
@@ -141,6 +141,8 @@ function currentColour(look: AvatarLook, cat: CategoryId): string | null {
 export function DesignMode({
   look,
   onChange,
+  name,
+  onRename,
   characters,
   editingId,
   onSave,
@@ -150,6 +152,8 @@ export function DesignMode({
 }: {
   look: AvatarLook;
   onChange: (next: AvatarLook) => void;
+  name: string;
+  onRename: (next: string) => void;
   characters: SavedCharacter[];
   editingId: string | null;
   onSave: () => void;
@@ -196,6 +200,34 @@ export function DesignMode({
       </div>
 
       <div className="drawer">
+        {/*
+         * Whose this is. Typing is the one thing in the whole game that needs a grown-up, so
+         * it is a plain field rather than anything cleverer — she decides the name, he types
+         * it. Focusing selects what's there, so replacing the given name is one tap and then
+         * typing, rather than a long-press and a fiddle with selection handles.
+         */}
+        <div className="name-row">
+          <span className="name-icon" aria-hidden="true">🏷️</span>
+          <input
+            className="name-input"
+            type="text"
+            value={name}
+            maxLength={NAME_MAX}
+            placeholder="Give them a name"
+            aria-label="Character name"
+            onFocus={(e) => {
+              // Deferred by a frame: focus lands first and the tap then places the caret,
+              // which would undo a select made here and now.
+              const field = e.currentTarget;
+              requestAnimationFrame(() => field.select());
+            }}
+            onChange={(e) => onRename(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+          />
+        </div>
+
         <div className="tabs" role="tablist">
           {CATEGORIES.map((c) => (
             <button
@@ -281,7 +313,9 @@ export function DesignMode({
               <span className="item-none">＋</span>
               <span className="item-name">New one</span>
             </button>
-            {characters.length === 0 && <p className="hint">No saved characters yet — tap Save to keep this one.</p>}
+            {characters.length === 0 && (
+              <p className="hint">Nobody saved yet — tap Play and this one is kept.</p>
+            )}
             {characters.map((c) => (
               <div key={c.id} className={"item item-saved" + (c.id === editingId ? " is-active" : "")}>
                 <button

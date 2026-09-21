@@ -8,6 +8,7 @@ import type { RoomId } from "./data/rooms";
 import {
   BASKET_LIMIT,
   MAX_CAST,
+  NAME_MAX,
   TIME_ORDER,
   castHome,
   loadSave,
@@ -45,6 +46,10 @@ export function App() {
     const s = loadSave();
     return s.characters.find((c) => c.id === s.activeId)?.look ?? DEFAULT_LOOK;
   });
+  const [name, setName] = useState<string>(() => {
+    const s = loadSave();
+    return s.characters.find((c) => c.id === s.activeId)?.name ?? "";
+  });
   const [muted, setMutedState] = useState(isMuted());
 
   const saveRef = useRef(save);
@@ -67,15 +72,17 @@ export function App() {
     };
   }, []);
 
-  const activeLook = save.characters.find((c) => c.id === save.activeId)?.look ?? null;
 
   function saveAndPlay() {
     setSave((prev) => {
       const existing = editingId ? prev.characters.find((c) => c.id === editingId) : undefined;
+      const given = name.trim();
       if (existing) {
         return {
           ...prev,
-          characters: prev.characters.map((c) => (c.id === existing.id ? { ...c, look } : c)),
+          characters: prev.characters.map((c) =>
+            c.id === existing.id ? { ...c, look, name: given || c.name } : c
+          ),
           activeId: existing.id,
         };
       }
@@ -83,20 +90,65 @@ export function App() {
       setEditingId(id);
       return {
         ...prev,
-        characters: [...prev.characters, { id, name: "Character " + (prev.characters.length + 1), look }],
+        characters: [
+          ...prev.characters,
+          { id, name: given || "Character " + (prev.characters.length + 1), look },
+        ],
         activeId: id,
-        // Somebody just made has to be somebody she can see, so they come out even if that
-        // means the one who has been out longest goes back in.
-        inScene: [...prev.inScene, id].slice(-MAX_CAST),
+        inScene: prev.inScene.length === 0 ? [id] : prev.inScene,
       };
     });
     setMode("explore");
   }
 
-  /** Start designing a fresh character rather than editing the current one. */
+  /**
+   * Makes the character there and then rather than at the end of dressing them. Deferring it
+   * meant tapping "New one" changed nothing you could see: the list you had just tapped in
+   * stayed exactly as it was until you went out to the room and came back.
+   */
   function newCharacter() {
-    setEditingId(null);
+    const id = newId();
+    const given = "Character " + (save.characters.length + 1);
+    setName(given);
+    setSave((prev) => ({
+      ...prev,
+      characters: [...prev.characters, { id, name: given, look: DEFAULT_LOOK }],
+      activeId: id,
+      // The very first one has to come out, or the room she is sent to is empty.
+      inScene: prev.inScene.length === 0 ? [id] : prev.inScene,
+    }));
+    setEditingId(id);
     setLook(DEFAULT_LOOK);
+  }
+
+  /**
+   * Dressing writes straight through to the character being dressed, so their thumbnail in
+   * the list keeps up with the big one on the stage.
+   */
+  function changeLook(next: AvatarLook) {
+    setLook(next);
+    if (!editingId) return;
+    setSave((prev) => ({
+      ...prev,
+      characters: prev.characters.map((c) => (c.id === editingId ? { ...c, look: next } : c)),
+    }));
+  }
+
+  /**
+   * Renaming writes through the same way. Held as typed — including empty, so the field can
+   * be cleared and started again — and only turned into a stored name at the point it is
+   * stored, where a blank falls back to what they were called before.
+   */
+  function changeName(next: string) {
+    const trimmed = next.slice(0, NAME_MAX);
+    setName(trimmed);
+    if (!editingId) return;
+    setSave((prev) => ({
+      ...prev,
+      characters: prev.characters.map((c) =>
+        c.id === editingId ? { ...c, name: trimmed.trim() || c.name } : c
+      ),
+    }));
   }
 
   /**
@@ -112,11 +164,17 @@ export function App() {
       if (prev.inScene.includes(id)) {
         if (prev.inScene.length < 2) return prev;
         const inScene = prev.inScene.filter((c) => c !== id);
-        return { ...prev, inScene, activeId: prev.activeId === id ? inScene[0] : prev.activeId };
+        return {
+          ...prev,
+          inScene,
+          activeId: prev.activeId === id ? inScene[0] : prev.activeId,
+          rooms: forgetPlaces(prev.rooms, [id]),
+        };
       }
       // Full up: the one who has been out longest makes way.
       const inScene = [...prev.inScene, id].slice(-MAX_CAST);
-      return { ...prev, inScene, activeId: id };
+      const pushedOut = prev.inScene.filter((c) => !inScene.includes(c));
+      return { ...prev, inScene, activeId: id, rooms: forgetPlaces(prev.rooms, pushedOut) };
     });
     setEditingId(id);
   }
@@ -133,12 +191,10 @@ export function App() {
     if (!chosen) return;
     setEditingId(id);
     setLook(chosen.look);
-    setSave((prev) => ({
-      ...prev,
-      activeId: id,
-      // Picking someone to dress is also picking them to play with, so they come out.
-      inScene: prev.inScene.includes(id) ? prev.inScene : [...prev.inScene, id].slice(-MAX_CAST),
-    }));
+    setName(chosen.name);
+    // Deliberately does NOT bring them out. Who is in the room is hers to choose, the same
+    // way the furniture is; dressing somebody is not the same as asking for them on stage.
+    setSave((prev) => ({ ...prev, activeId: id }));
   }
 
   function deleteCharacter(id: string) {
@@ -147,17 +203,28 @@ export function App() {
       const activeId = prev.activeId === id ? characters[0]?.id ?? null : prev.activeId;
       let inScene = prev.inScene.filter((c) => c !== id);
       if (inScene.length === 0 && activeId) inScene = [activeId];
-      // Their spot in every room goes with them, or the next character to take that id
-      // (there won't be one, but the room shouldn't be holding a place for a ghost) inherits it.
-      const rooms = {} as GameSave["rooms"];
-      for (const [room, state] of Object.entries(prev.rooms) as Array<[RoomId, RoomState]>) {
-        const places = { ...state.places };
-        delete places[id];
-        rooms[room] = { ...state, places };
-      }
-      return { ...prev, characters, activeId, inScene, rooms };
+      return { ...prev, characters, activeId, inScene, rooms: forgetPlaces(prev.rooms, [id]) };
     });
-    if (editingId === id) setEditingId(null);
+    if (editingId === id) {
+      setEditingId(null);
+      setName("");
+    }
+  }
+
+  /**
+   * Somebody who has been sent back forgets where they were standing. They left; when she
+   * brings them out again they join the line-up rather than reappearing in whatever corner
+   * she put them away from — which is usually exactly the corner they were in the way in.
+   */
+  function forgetPlaces(rooms: GameSave["rooms"], gone: string[]): GameSave["rooms"] {
+    if (gone.length === 0) return rooms;
+    const next = {} as GameSave["rooms"];
+    for (const [room, state] of Object.entries(rooms) as Array<[RoomId, RoomState]>) {
+      const places = { ...state.places };
+      for (const id of gone) delete places[id];
+      next[room] = { ...state, places };
+    }
+    return next;
   }
 
   function changeRoom(next: RoomId) {
@@ -398,7 +465,9 @@ export function App() {
       {mode === "design" ? (
         <DesignMode
           look={look}
-          onChange={setLook}
+          onChange={changeLook}
+          name={name}
+          onRename={changeName}
           characters={save.characters}
           editingId={editingId}
           onSave={saveAndPlay}
@@ -439,7 +508,11 @@ export function App() {
             setMode("design");
           }}
           onDesign={() => {
-            if (activeLook) setLook(activeLook);
+            const who = save.characters.find((c) => c.id === save.activeId);
+            if (who) {
+              setLook(who.look);
+              setName(who.name);
+            }
             setEditingId(save.activeId);
             setMode("design");
           }}

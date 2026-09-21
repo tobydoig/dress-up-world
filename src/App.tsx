@@ -17,6 +17,7 @@ import {
   placeFurniture,
   type AvatarPose,
   type GameSave,
+  type CharacterKind,
   type PlacedFurniture,
   type RoomState,
 } from "./lib/storage";
@@ -33,6 +34,12 @@ type Mode = "design" | "explore";
 const PERSIST_DELAY = 300;
 
 /** Drop one entry by position, so two of the same thing in a basket stay distinguishable. */
+/** "Baby 2" rather than "Character 5", because that is what she will call it. */
+function defaultName(kind: CharacterKind, save: GameSave): string {
+  const same = save.characters.filter((c) => c.kind === kind).length + 1;
+  return (kind === "baby" ? "Baby " : "Character ") + same;
+}
+
 function removeAt<T>(list: T[], index: number): T[] {
   return [...list.slice(0, index), ...list.slice(index + 1)];
 }
@@ -49,6 +56,11 @@ export function App() {
   const [name, setName] = useState<string>(() => {
     const s = loadSave();
     return s.characters.find((c) => c.id === s.activeId)?.name ?? "";
+  });
+  /** Whether the thing being dressed is a baby, which decides what the drawer offers. */
+  const [editingKind, setEditingKind] = useState<CharacterKind>(() => {
+    const s = loadSave();
+    return s.characters.find((c) => c.id === s.activeId)?.kind ?? "child";
   });
   const [muted, setMutedState] = useState(isMuted());
 
@@ -92,7 +104,7 @@ export function App() {
         ...prev,
         characters: [
           ...prev.characters,
-          { id, name: given || "Character " + (prev.characters.length + 1), look },
+          { id, kind: editingKind, name: given || defaultName(editingKind, prev), look },
         ],
         activeId: id,
       };
@@ -108,15 +120,21 @@ export function App() {
    * meant tapping "New one" changed nothing you could see: the list you had just tapped in
    * stayed exactly as it was until you went out to the room and came back.
    */
-  function newCharacter() {
+  function newCharacter(kind: CharacterKind = "child") {
     const id = newId();
-    const given = "Character " + (save.characters.length + 1);
+    const given = defaultName(kind, save);
     setName(given);
-    setSave((prev) => ({
-      ...prev,
-      characters: [...prev.characters, { id, name: given, look: DEFAULT_LOOK }],
-      activeId: id,
-    }));
+    setEditingKind(kind);
+    setSave((prev) => {
+      const made: GameSave = {
+        ...prev,
+        characters: [...prev.characters, { id, kind, name: given, look: DEFAULT_LOOK }],
+        activeId: id,
+      };
+      // Making someone is the one act that does place them: she is about to press Play and
+      // should find them standing there, not have to go and fetch what she just made.
+      return bringTo(made, prev.lastRoom, id);
+    });
     setEditingId(id);
     setLook(DEFAULT_LOOK);
   }
@@ -181,6 +199,7 @@ export function App() {
     setEditingId(id);
     setLook(chosen.look);
     setName(chosen.name);
+    setEditingKind(chosen.kind);
     // Dressing somebody does not move them. Their clothes change wherever they happen to
     // be standing, which is the whole point of them living in rooms.
     setSave((prev) => ({ ...prev, activeId: id }));
@@ -286,7 +305,7 @@ export function App() {
     id: string,
     x: number,
     y: number,
-    settle?: { pose: AvatarPose; seat: string | null }
+    settle?: { pose: AvatarPose; seat: string | null; heldBy?: string | null }
   ) {
     updateRoom((room) => {
       const was = room.places[id];
@@ -299,6 +318,7 @@ export function App() {
             y,
             pose: settle ? settle.pose : was?.pose ?? "stand",
             seat: settle ? settle.seat : was?.seat ?? null,
+            heldBy: settle ? settle.heldBy ?? null : was?.heldBy ?? null,
           },
         },
       };
@@ -488,6 +508,7 @@ export function App() {
           onChange={changeLook}
           name={name}
           onRename={changeName}
+          editingKind={editingKind}
           characters={save.characters}
           editingId={editingId}
           onSave={saveAndPlay}
@@ -531,6 +552,7 @@ export function App() {
             if (who) {
               setLook(who.look);
               setName(who.name);
+              setEditingKind(who.kind);
             }
             setEditingId(save.activeId);
             setMode("design");

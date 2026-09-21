@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { Avatar } from "../avatar/Avatar";
+import { BabyLayers } from "../avatar/Baby";
 import { COVERS_LEGS } from "../avatar/clothingParts";
 import { CATEGORIES, type AvatarLook, type CategoryId } from "../data/wardrobe";
-import { NAME_MAX, type SavedCharacter } from "../lib/storage";
+import { NAME_MAX, type CharacterKind, type SavedCharacter } from "../lib/storage";
 import { playPop, playSparkle, playSwatch, playTap } from "../lib/sound";
 
 /** Each tab previews the part of the body it changes, so thumbnails aren't tiny full bodies. */
+/** The only tabs that mean anything for a baby. */
+const BABY_TABS = new Set<CategoryId>(["top", "eyes", "nose", "mouth", "blush", "skin"]);
+
 const CROPS: Record<CategoryId, string> = {
   top: "26 116 148 148",
   bottom: "26 214 148 148",
@@ -143,6 +147,7 @@ export function DesignMode({
   onChange,
   name,
   onRename,
+  editingKind,
   characters,
   editingId,
   onSave,
@@ -154,14 +159,23 @@ export function DesignMode({
   onChange: (next: AvatarLook) => void;
   name: string;
   onRename: (next: string) => void;
+  /** Which sort of thing is being dressed, which decides what the drawer offers. */
+  editingKind: CharacterKind;
   characters: SavedCharacter[];
   editingId: string | null;
   onSave: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
-  onNew: () => void;
+  onNew: (kind: CharacterKind) => void;
 }) {
   const [activeId, setActiveId] = useState<CategoryId>("top");
+  /*
+   * A baby has no shoes to fill, no hairstyle that would read as anything but a wig on a
+   * head that size, and nobody puts lipstick on a baby. Hiding those tabs is kinder than
+   * offering them and quietly doing nothing.
+   */
+  const tabs =
+    editingKind === "baby" ? CATEGORIES.filter((c) => BABY_TABS.has(c.id)) : CATEGORIES;
   /*
    * Who you are dressing is chosen exactly the way a hat is: a tab at the far left of the
    * same strip, then a face in the same row of pictures. It used to be a button below the
@@ -201,7 +215,13 @@ export function DesignMode({
 
       <div className="stage">
         <div className="stage-glow" />
-        <Avatar look={look} />
+        {editingKind === "baby" ? (
+          <svg viewBox="30 240 140 160" className="avatar-svg">
+            <BabyLayers look={look} />
+          </svg>
+        ) : (
+          <Avatar look={look} />
+        )}
         <div className="stage-shadow" />
       </div>
 
@@ -248,7 +268,7 @@ export function DesignMode({
             <span className="tab-icon">🧒</span>
             <span className="tab-label">Avatar</span>
           </button>
-          {CATEGORIES.map((c) => (
+          {tabs.map((c) => (
             <button
               key={c.id}
               role="tab"
@@ -273,12 +293,22 @@ export function DesignMode({
               <button
                 className="item"
                 onClick={() => {
-                  onNew();
+                  onNew("child");
                   playPop();
                 }}
               >
                 <span className="item-none">＋</span>
                 <span className="item-name">New one</span>
+              </button>
+              <button
+                className="item"
+                onClick={() => {
+                  onNew("baby");
+                  playPop();
+                }}
+              >
+                <span className="item-none">👶</span>
+                <span className="item-name">New baby</span>
               </button>
               {characters.length === 0 && (
                 <p className="hint">Nobody saved yet — tap Play and this one is kept.</p>
@@ -293,7 +323,13 @@ export function DesignMode({
                     }}
                   >
                     <span className="item-art">
-                      <Avatar look={c.look} uid={"saved-" + c.id} animate={false} />
+                      {c.kind === "baby" ? (
+                        <svg viewBox="40 250 120 140" className="thing-svg">
+                          <BabyLayers look={c.look} animate={false} />
+                        </svg>
+                      ) : (
+                        <Avatar look={c.look} uid={"saved-" + c.id} animate={false} />
+                      )}
                     </span>
                     <span className="item-name">{c.name}</span>
                   </button>

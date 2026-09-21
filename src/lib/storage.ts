@@ -47,9 +47,15 @@ export interface PlacedFurniture {
 export type AvatarPose = "stand" | "sit" | "lie";
 
 /** One setting for the whole world, so walking into the next room doesn't change the time. */
-export type TimeOfDay = "day" | "dusk" | "night";
+export type TimeOfDay = "day" | "night";
 
-export const TIME_ORDER: TimeOfDay[] = ["day", "dusk", "night"];
+export const TIME_ORDER: TimeOfDay[] = ["day", "night"];
+
+/**
+ * There used to be a teatime in the middle. Two states make the button a light switch — one
+ * tap, one obvious result — where three made it a cycle you had to step through.
+ */
+const LEGACY_DUSK = "dusk";
 
 export interface RoomState {
   items: PlacedFurniture[];
@@ -269,9 +275,8 @@ export function loadSave(): GameSave {
 
     const activeId = characters.some((c) => c.id === parsed.activeId) ? parsed.activeId! : characters[0]?.id ?? null;
     const lastRoom = ROOM_ORDER.includes(parsed.lastRoom as RoomId) ? (parsed.lastRoom as RoomId) : "playroom";
-    const timeOfDay = TIME_ORDER.includes(parsed.timeOfDay as TimeOfDay)
-      ? (parsed.timeOfDay as TimeOfDay)
-      : "day";
+    const savedTime = (parsed.timeOfDay as string) === LEGACY_DUSK ? "night" : parsed.timeOfDay;
+    const timeOfDay = TIME_ORDER.includes(savedTime as TimeOfDay) ? (savedTime as TimeOfDay) : "day";
 
     return {
       characters,

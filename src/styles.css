@@ -1662,3 +1662,28 @@ button {
     animation: none;
   }
 }
+
+/* ---------- day and night ---------- */
+
+/* Behind the scene, covering the painted floor that fills the stage below the viewBox. The
+   scene has its own wash inside the SVG; this one only shows where the scene doesn't reach. */
+.night-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  transition: opacity 1400ms cubic-bezier(0.45, 0.05, 0.35, 1);
+}
+
+/* The scene is not positioned, so without this the wash above would paint over it. */
+.room-slide {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .night-wash,
+  .sky-arm {
+    transition: none !important;
+  }
+}

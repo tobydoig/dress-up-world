@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from "react";
@@ -153,36 +154,37 @@ const REACTION_MS = 1100;
 const CHEW_MS = 1500;
 
 /**
- * How dark the whole scene goes. Day adds nothing at all, so the rooms look exactly as they
- * did before anyone thought about time of day.
+ * How long nightfall takes. Long enough to be worth watching the sun go down, short enough
+ * that a four-year-old who tapped the button by accident isn't stuck waiting for the room to
+ * come back. Everything that changes with the time of day moves over exactly this long, so
+ * the sky, the sun and the darkening all arrive together.
  */
-const TINT: Record<TimeOfDay, { colour: string; opacity: number }> = {
-  day: { colour: "#000000", opacity: 0 },
-  dusk: { colour: "#3a2a6b", opacity: 0.28 },
-  night: { colour: "#0d1240", opacity: 0.54 },
-};
+const SKY_MS = 1400;
+const SKY_EASE = "cubic-bezier(0.45, 0.05, 0.35, 1)";
+const skyMove = (property: string) => property + " " + SKY_MS + "ms " + SKY_EASE;
 
 /**
- * Icon only. Spelling out "Teatime" next to the character picker and the dress-up button was
- * enough to wrap the room name onto a second line on a phone, which is the size this is played
- * at. The name goes in the label instead.
+ * How dark the whole scene goes. One colour at two strengths rather than a colour per time:
+ * a single number can be handed straight to a CSS transition, so the room dims smoothly
+ * instead of stepping. Day is nothing at all, so daylit rooms look exactly as they always did.
  */
+const NIGHT_WASH = "#0d1240";
+const WASH: Record<TimeOfDay, number> = { day: 0, night: 0.54 };
+
+/** Icon only — the name goes in the label, where it can't push the room name onto two lines. */
 const TIME_ICON: Record<TimeOfDay, string> = {
   day: "☀️",
-  dusk: "🌆",
   night: "🌙",
 };
 
 const TIME_NAME: Record<TimeOfDay, string> = {
   day: "Daytime",
-  dusk: "Teatime",
   night: "Night",
 };
 
 /** What's behind the window, which is the quickest way to tell what time it is. */
 const SKY: Record<TimeOfDay, string> = {
   day: "#bfe8ff",
-  dusk: "#ffb37a",
   night: "#28306b",
 };
 
@@ -329,11 +331,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function rgba(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + alpha + ")";
-}
-
 /** A thing's own artwork, sized to fit a square button or slot. */
 function ThingArt({ id }: { id: string }): ReactElement | null {
   const thing = THINGS[id];
@@ -453,36 +450,105 @@ const Character = memo(function Character({
   );
 });
 
+/**
+ * The sun and the moon ride opposite ends of one invisible arm. Half a turn swings one of
+ * them down out of the sky and carries the other one up — the whole of nightfall in a single
+ * number, and it runs backwards for free when she taps the button again.
+ *
+ * Each body counter-turns by the same amount about its own centre, so the crescent arrives
+ * the right way up instead of upside down.
+ */
+function SkyArm({
+  pivot,
+  sunAt,
+  night,
+  sun,
+  moon,
+}: {
+  /** What the arm turns about — always somewhere below the sky, out of sight. */
+  pivot: [number, number];
+  /** Where the sun sits by day. The moon is drawn at the far end of the arm from here. */
+  sunAt: [number, number];
+  night: boolean;
+  sun: ReactElement;
+  moon: ReactElement;
+}): ReactElement {
+  const angle = night ? 180 : 0;
+  // Half a turn has to land the moon exactly where the sun was, so its resting place isn't a
+  // free choice: it's the sun's position reflected through the pivot.
+  const moonAt: [number, number] = [2 * pivot[0] - sunAt[0], 2 * pivot[1] - sunAt[1]];
+  const turn = (degrees: number, [ox, oy]: [number, number]): CSSProperties => ({
+    transformBox: "view-box",
+    transformOrigin: ox + "px " + oy + "px",
+    transform: "rotate(" + degrees + "deg)",
+    transition: skyMove("transform"),
+  });
+  return (
+    <g className="sky-arm" style={turn(angle, pivot)}>
+      <g className="sky-arm" style={turn(-angle, sunAt)}>
+        {sun}
+      </g>
+      <g className="sky-arm" style={turn(-angle, moonAt)}>
+        {moon}
+      </g>
+    </g>
+  );
+}
+
 /** The window, or — outdoors — the sky, both of which change with the time of day. */
 const RoomFittings = memo(function RoomFittings({ room, time }: { room: RoomDef; time: TimeOfDay }): ReactElement {
+  const night = time === "night";
+  /* Stars don't move with the arm; they just arrive. */
+  const stars: CSSProperties = { opacity: night ? 0.9 : 0, transition: skyMove("opacity") };
+
   if (room.outdoor) {
     return (
       <g>
-        {time === "night" ? (
-          <g>
-            {STARS.map(([x, y, r]) => (
-              <circle key={x + ":" + y} cx={x} cy={y} r={r} fill="#fffdfa" opacity={0.9} />
-            ))}
-            <circle cx={324} cy={62} r={22} fill="#fff3c4" />
-            <circle cx={314} cy={54} r={19} fill={room.wall} />
-          </g>
-        ) : (
-          <g>
-            {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-              <rect
-                key={a}
-                x={-3}
-                y={-34}
-                width={6}
-                height={11}
-                rx={3}
-                fill={time === "dusk" ? "#ff9040" : "#ffe067"}
-                transform={"translate(324 62) rotate(" + a + ")"}
-              />
-            ))}
-            <circle cx={324} cy={62} r={21} fill={time === "dusk" ? "#ff7a3f" : "#ffd23f"} />
-          </g>
-        )}
+        <defs>
+          <clipPath id="sky-band">
+            <rect x={0} y={0} width={ROOM_W} height={WALL_BOTTOM} />
+          </clipPath>
+        </defs>
+
+        <g style={stars}>
+          {STARS.map(([x, y, r]) => (
+            <circle key={x + ":" + y} cx={x} cy={y} r={r} fill="#fffdfa" />
+          ))}
+        </g>
+
+        {/* Clipped to the sky, so the sun sets behind the horizon instead of sliding over
+            the grass, and the moon comes up out of it. */}
+        <g clipPath="url(#sky-band)">
+          <SkyArm
+            pivot={[200, 202]}
+            sunAt={[324, 62]}
+            night={night}
+            sun={
+              <g>
+                {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+                  <rect
+                    key={a}
+                    x={-3}
+                    y={-34}
+                    width={6}
+                    height={11}
+                    rx={3}
+                    fill="#ffe067"
+                    transform={"translate(324 62) rotate(" + a + ")"}
+                  />
+                ))}
+                <circle cx={324} cy={62} r={21} fill="#ffd23f" />
+              </g>
+            }
+            moon={
+              <g>
+                <circle cx={76} cy={342} r={22} fill="#fff3c4" />
+                <circle cx={66} cy={334} r={19} fill={room.wall} />
+              </g>
+            }
+          />
+        </g>
+
         {([
           [70, 60, 1],
           [188, 36, 0.8],
@@ -501,19 +567,51 @@ const RoomFittings = memo(function RoomFittings({ room, time }: { room: RoomDef;
 
   return (
     <g>
-      <rect x={160} y={74} width={80} height={68} rx={7} fill={SKY[time]} stroke={room.wallTrim} strokeWidth={7} />
-      <path d="M200,76 v64 M162,108 h76" stroke={room.wallTrim} strokeWidth={5} />
-      {time === "night" ? (
-        <g>
-          <circle cx={222} cy={92} r={9} fill="#fff3c4" />
-          <circle cx={218} cy={88} r={7.5} fill={SKY.night} />
+      <defs>
+        {/* The glass, inside the frame's stroke. */}
+        <clipPath id="window-glass">
+          <rect x={163.5} y={77.5} width={73} height={61} rx={4} />
+        </clipPath>
+      </defs>
+
+      <rect
+        x={160}
+        y={74}
+        width={80}
+        height={68}
+        rx={7}
+        fill={SKY[time]}
+        style={{ transition: skyMove("fill") }}
+      />
+
+      <g clipPath="url(#window-glass)">
+        <g style={stars}>
           <circle cx={176} cy={90} r={1.8} fill="#fffdfa" />
           <circle cx={186} cy={124} r={1.6} fill="#fffdfa" />
           <circle cx={226} cy={126} r={1.7} fill="#fffdfa" />
         </g>
-      ) : (
-        <circle cx={222} cy={92} r={9} fill={time === "dusk" ? "#ff7a3f" : "#fff3b0"} />
-      )}
+        {/* The sun keeps its old spot in the top-right pane, clear of the glazing bar — dead
+            centre it was half-hidden behind it and stopped reading as a sun at all. Pivoting
+            below the middle of the glass sends it down behind the sill and brings the moon
+            up to the same spot. */}
+        <SkyArm
+          pivot={[200, 126]}
+          sunAt={[214, 94]}
+          night={night}
+          sun={<circle cx={214} cy={94} r={9} fill="#fff3b0" />}
+          moon={
+            <g>
+              <circle cx={186} cy={158} r={9} fill="#fff3c4" />
+              {/* The bite out of the crescent is sky, so it has to fade with the sky. */}
+              <circle cx={182} cy={154} r={7.5} fill={SKY[time]} style={{ transition: skyMove("fill") }} />
+            </g>
+          }
+        />
+      </g>
+
+      {/* Frame and glazing bars last, so they pass in front of whatever is behind the glass. */}
+      <rect x={160} y={74} width={80} height={68} rx={7} fill="none" stroke={room.wallTrim} strokeWidth={7} />
+      <path d="M200,76 v64 M162,108 h76" stroke={room.wallTrim} strokeWidth={5} />
       <path d={"M0,44 h" + ROOM_W} stroke={room.wallTrim} strokeWidth={6} opacity={0.65} />
     </g>
   );
@@ -1357,17 +1455,11 @@ export function ExploreMode({
 
   // One reading per render. Thirst is measured in hours, so nothing needs a ticking clock.
   const now = Date.now();
-  const tint = TINT[timeOfDay];
-  const lit = timeOfDay !== "day" ? roomState.items.filter((i) => LIGHT_GLOW[i.id] && isLit(i.id, i)) : [];
-  /**
-   * The scene is anchored to the top of the stage and the stage below it is painted floor
-   * colour, so nightfall has to be laid over that background too — tinting only inside the
-   * viewBox left a brightly lit strip of floor along the bottom of the screen.
-   */
-  const stageBackground =
-    tint.opacity > 0
-      ? "linear-gradient(" + rgba(tint.colour, tint.opacity) + "," + rgba(tint.colour, tint.opacity) + "), " + room.floor
-      : room.floor;
+  const night = timeOfDay === "night";
+  const wash = WASH[timeOfDay];
+  /* Rendered whatever the time, so the lamps come up as the room goes down rather than
+     snapping on at the end of it. */
+  const lit = roomState.items.filter((i) => LIGHT_GLOW[i.id] && isLit(i.id, i));
 
   return (
     <div className="screen">
@@ -1379,7 +1471,7 @@ export function ExploreMode({
         <div className="topbar-actions">
           <button
             className="chip-btn chip-ghost chip-icon"
-            aria-label={TIME_NAME[timeOfDay] + " — tap to change the time of day"}
+            aria-label={TIME_NAME[timeOfDay] + " — tap to turn it to " + (night ? "day" : "night")}
             onClick={() => {
               onCycleTime();
               playWhoosh();
@@ -1410,7 +1502,14 @@ export function ExploreMode({
         </div>
       </header>
 
-      <div className="room-stage" style={{ background: stageBackground }}>
+      <div className="room-stage" style={{ background: room.floor }}>
+        {/*
+         * The scene is anchored to the top of the stage and the stage below it is painted
+         * floor colour, so nightfall has to reach that background too — darkening only what
+         * is inside the viewBox left a brightly lit strip of floor along the bottom of the
+         * screen. It sits behind the scene, which carries its own wash.
+         */}
+        <div className="night-wash" style={{ opacity: wash, background: NIGHT_WASH }} />
         <div key={roomId} className="room-slide">
           <svg
             ref={svgRef}
@@ -1532,19 +1631,21 @@ export function ExploreMode({
               })}
 
             {/* Nightfall goes over the whole scene, and the lamps then punch back through it. */}
-            {tint.opacity > 0 && (
-              <rect
-                x={0}
-                y={0}
-                width={ROOM_W}
-                height={ROOM_H}
-                fill={tint.colour}
-                opacity={tint.opacity}
-                pointerEvents="none"
-              />
-            )}
+            <rect
+              x={0}
+              y={0}
+              width={ROOM_W}
+              height={ROOM_H}
+              fill={NIGHT_WASH}
+              opacity={wash}
+              style={{ transition: skyMove("opacity") }}
+              pointerEvents="none"
+            />
             {lit.length > 0 && (
-              <g style={{ mixBlendMode: "screen" }} pointerEvents="none">
+              <g
+                style={{ mixBlendMode: "screen", opacity: night ? 1 : 0, transition: skyMove("opacity") }}
+                pointerEvents="none"
+              >
                 {lit.map((item) => {
                   const glow = LIGHT_GLOW[item.id];
                   return (

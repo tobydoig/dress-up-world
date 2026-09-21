@@ -147,12 +147,18 @@ const SEATS: Record<string, Spot[]> = {
    * that is actually free: a character clamps at x=336 and at the floor line, so vertically
    * the two are barely distinguishable and the bottom one won every time.
    */
+  /*
+   * The two y values are each 20 above their own mattress's top surface — the same gap the
+   * single bed uses, which is what puts a lying figure ON the bedding rather than sunk into
+   * it or, as these were, hanging down the front of it. Bottom mattress starts at 264,
+   * top at 190.
+   */
   bunkBed: [
-    { zones: [{ x: 238, y: 330 }, { x: 300, y: 282 }], x: 392, y: 282, pose: "lie" },
+    { zones: [{ x: 238, y: 330 }, { x: 300, y: 282 }], x: 388, y: 244, pose: "lie" },
     {
       zones: [{ x: 372, y: 330 }, { x: 372, y: 250 }, { x: 320, y: 196 }],
-      x: 392,
-      y: 196,
+      x: 388,
+      y: 170,
       pose: "lie",
     },
   ],

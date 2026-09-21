@@ -176,6 +176,7 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
       { id: "plotThree", name: "Bed 3" },
       { id: "seedTable", name: "Seeds" },
       { id: "wateringCan", name: "Watering can" },
+      { id: "telescope", name: "Telescope" },
     ],
   },
   {

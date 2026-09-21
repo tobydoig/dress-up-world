@@ -2099,3 +2099,68 @@ button {
   transform-origin: 0% 0%;
   transform: rotate(88deg);
 }
+
+/* ---------- looking through the telescope ---------- */
+
+/*
+ * Over the room rather than replacing it, so closing it puts her straight back where she
+ * was. Dark enough that the eyepiece is the only thing to look at.
+ */
+.sky-view {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(8, 5, 22, 0.92);
+  animation: fade-in 0.2s ease-out both;
+}
+
+/* A round hole, which is what looking down a telescope is. Square would undo the whole
+   illusion, and the ring is the barrel. */
+.sky-eye {
+  width: min(62vw, 42dvh);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 5px solid #3b2470;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.sky-eye svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sky-name {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--yellow);
+}
+
+/* For whoever is reading it out. Nothing here depends on it being read. */
+.sky-note {
+  margin: 0 32px;
+  max-width: 300px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.sky-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-view {
+    animation: none;
+  }
+}

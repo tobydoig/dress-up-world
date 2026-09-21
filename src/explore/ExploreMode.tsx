@@ -23,6 +23,7 @@ import {
   PAD,
   POPPED_BALLOONS,
   STACKABLE,
+  SKYWATCH,
   STALLS,
   WALL_MOUNTED,
   CONTAINER_DROP,
@@ -38,6 +39,7 @@ import {
   slotAt,
 } from "./furniture";
 import { CROPS, isThirsty, ripeness } from "../data/growing";
+import { SIGHTS } from "../data/sky";
 import { FURNITURE_GROUPS, ROOMS, ROOM_ORDER, type RoomDef, type RoomId } from "../data/rooms";
 import {
   APPLIANCES,
@@ -245,6 +247,13 @@ const CLOUDS: Array<[number, number, number]> = [
   [70, 60, 1],
   [188, 36, 0.8],
   [252, 86, 0.6],
+];
+
+/** A scatter behind whatever the telescope is pointed at, so nothing floats in a void. */
+const SKY_DUST: Array<[number, number, number]> = [
+  [24, 40, 1.6], [58, 22, 1.2], [168, 36, 1.8], [186, 96, 1.3], [150, 168, 1.5],
+  [40, 170, 1.4], [16, 110, 1.2], [96, 22, 1.5], [178, 140, 1.2], [70, 186, 1.4],
+  [128, 42, 1.1], [30, 82, 1.3],
 ];
 
 /** Fixed so the stars don't jump about every time the room re-renders. */
@@ -832,6 +841,8 @@ export function ExploreMode({
   /** Which basket slots are waiting in the pot. Indices, so two of the same thing still work. */
   const [pot, setPot] = useState<number[]>([]);
   const [padId, setPadId] = useState<string | null>(null);
+  /** Which of the sky's sights the eyepiece is on, or null when nobody is looking. */
+  const [sight, setSight] = useState<number | null>(null);
   const [reaction, setReaction] = useState<string | null>(null);
   /** Who is mid-mouthful, if anyone. */
   const [chewingId, setChewingId] = useState<string | null>(null);
@@ -1305,6 +1316,18 @@ export function ExploreMode({
     if (CONTAINERS.has(id)) {
       onUpdateFurniture(id, { open: !item.open });
       playCreak();
+      return;
+    }
+
+    if (SKYWATCH.has(id)) {
+      // Nothing to see in daylight, which is the one true thing this piece has to teach.
+      if (timeOfDay !== "night") {
+        setReaction("Too bright! Come back when it's dark.");
+        playTap();
+      } else {
+        setSight(0);
+        playSparkle();
+      }
       return;
     }
 
@@ -2057,6 +2080,69 @@ export function ExploreMode({
             <span className="bin-label">
               {dragKind === "avatar" ? "Drop to send back" : "Drop to remove"}
             </span>
+          </div>
+        )}
+
+        {sight !== null && (
+          <div className="sky-view">
+            {/*
+             * A round hole in the dark, because that is what looking through a telescope is.
+             * The sights are paged rather than panned: a four-year-old can press an arrow,
+             * and cannot hunt across a sky for something she has never seen.
+             */}
+            <div className="sky-eye">
+              <svg viewBox="0 0 200 200" aria-hidden="true">
+                <defs>
+                  <clipPath id="sky-hole">
+                    <circle cx={100} cy={100} r={100} />
+                  </clipPath>
+                </defs>
+                <g clipPath="url(#sky-hole)">
+                  <circle cx={100} cy={100} r={100} fill="#0d1240" />
+                  {/* A scatter behind everything, so even a planet sits among stars. */}
+                  {SKY_DUST.map(([x, y, r]) => (
+                    <circle key={x + ":" + y} cx={x} cy={y} r={r} fill="#fffdfa" opacity={0.5} />
+                  ))}
+                  {/* Static markup from our own module — no input of any kind reaches
+                      this, and the sights are plain shapes written by hand in sky.ts. */}
+                  <g dangerouslySetInnerHTML={{ __html: SIGHTS[sight].art() }} />
+                </g>
+              </svg>
+            </div>
+
+            <p className="sky-name">{SIGHTS[sight].name}</p>
+            <p className="sky-note">{SIGHTS[sight].note}</p>
+
+            <button
+              className="room-arrow room-arrow-left"
+              aria-label="The one before"
+              onClick={() => {
+                setSight((i) => ((i ?? 0) - 1 + SIGHTS.length) % SIGHTS.length);
+                playTap();
+              }}
+            >
+              ‹
+            </button>
+            <button
+              className="room-arrow room-arrow-right"
+              aria-label="The next one"
+              onClick={() => {
+                setSight((i) => ((i ?? 0) + 1) % SIGHTS.length);
+                playTap();
+              }}
+            >
+              ›
+            </button>
+            <button
+              className="sheet-close sky-close"
+              aria-label="Stop looking"
+              onClick={() => {
+                setSight(null);
+                playTap();
+              }}
+            >
+              ✕
+            </button>
           </div>
         )}
 

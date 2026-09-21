@@ -116,6 +116,9 @@ const SEATS: Record<
   chairLeft: { zoneX: 124, zoneY: 328, x: 124, y: 324, pose: "sit" },
   chairRight: { zoneX: 288, zoneY: 328, x: 288, y: 324, pose: "sit" },
   bed: { zoneX: 286, zoneY: 330, x: 369, y: 220, pose: "lie" },
+  // The bottom bunk only. The top one is out of reach of a dragged character, and a figure
+  // lying up there would be half off the top of the room anyway.
+  bunkBed: { zoneX: 300, zoneY: 282, x: 372, y: 276, pose: "lie" },
 };
 
 /**

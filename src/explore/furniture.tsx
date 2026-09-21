@@ -67,10 +67,14 @@ export const FLAT_ON_FLOOR = new Set(["playRug", "bedroomRug"]);
 /** Small enough to put on top of other furniture, so the base may leave the floor. */
 export const STACKABLE = new Set([
   "teddy", "plushie", "fruitBowl", "blocks", "bedsideLamp", "computer", "deskLamp", "plantSmall",
+  "plushieBunny", "plushieDino", "plushieDuck",
 ]);
 
 /** Pieces you can open and put things inside. Tapping one opens it. */
-export const CONTAINERS = new Set(["fridge", "wardrobe", "toyBox", "cupboard", "drawers"]);
+export const CONTAINERS = new Set([
+  "fridge", "wardrobe", "toyBox", "cupboard", "drawers",
+  "tallCupboard", "sideboard", "tallDrawers",
+]);
 
 /** Pieces that sell things. Tapping one opens its stall. */
 export const STALLS = new Set(Object.keys(STALL_STOCK));
@@ -280,6 +284,9 @@ export const CONTAINER_SLOTS: Record<string, Slots> = {
   toyBox: { x: 38, y: 208, cols: 3, rows: 1, stepX: 24, stepY: 0, scale: 0.5 },
   cupboard: { x: 44, y: 122, cols: 3, rows: 1, stepX: 28, stepY: 0, scale: 0.52 },
   drawers: { x: 138, y: 190, cols: 3, rows: 1, stepX: 22, stepY: 0, scale: 0.44 },
+  tallCupboard: { x: 48, y: 126, cols: 3, rows: 2, stepX: 26, stepY: 46, scale: 0.46 },
+  sideboard: { x: 146, y: 196, cols: 4, rows: 1, stepX: 24, stepY: 0, scale: 0.42 },
+  tallDrawers: { x: 240, y: 146, cols: 2, rows: 3, stepX: 26, stepY: 30, scale: 0.4 },
 };
 
 export function capacityOf(id: string): number {
@@ -313,6 +320,9 @@ export const CONTAINER_DROP: Record<string, { x: number; y: number; w: number; h
   toyBox: { x: 16, y: 170, w: 86, h: 62 },
   cupboard: { x: 18, y: 90, w: 104, h: 60 },
   drawers: { x: 114, y: 156, w: 88, h: 76 },
+  tallCupboard: { x: 30, y: 108, w: 94, h: 124 },
+  sideboard: { x: 130, y: 182, w: 110, h: 50 },
+  tallDrawers: { x: 226, y: 126, w: 74, h: 106 },
 };
 
 const WOOD = "#b5763f";
@@ -968,6 +978,57 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
+  plushieBunny: () => (
+    <g>
+      {hitPad(272, 176, 56, 56)}
+      <ellipse cx={300} cy={214} rx={18} ry={17} fill="#f6c0dd" />
+      <circle cx={300} cy={192} r={14} fill="#f6c0dd" />
+      {/* The ears are the whole animal. Long, and leaning apart so it doesn't read as a cat. */}
+      <ellipse cx={291} cy={174} rx={5} ry={13} fill="#f6c0dd" transform="rotate(-12 291 174)" />
+      <ellipse cx={309} cy={174} rx={5} ry={13} fill="#f6c0dd" transform="rotate(12 309 174)" />
+      <ellipse cx={291} cy={175} rx={2.4} ry={8} fill="#ffdfee" transform="rotate(-12 291 175)" />
+      <ellipse cx={309} cy={175} rx={2.4} ry={8} fill="#ffdfee" transform="rotate(12 309 175)" />
+      <circle cx={295} cy={190} r={2.2} fill="#3c3350" />
+      <circle cx={305} cy={190} r={2.2} fill="#3c3350" />
+      <ellipse cx={300} cy={196} rx={2.6} ry={2} fill="#e0709f" />
+      <ellipse cx={300} cy={220} rx={9} ry={7} fill="#ffdfee" />
+    </g>
+  ),
+
+  plushieDino: () => (
+    <g transform="translate(-124 0)">
+      {hitPad(268, 176, 66, 56)}
+      <ellipse cx={298} cy={212} rx={21} ry={18} fill="#5ed64a" />
+      <circle cx={282} cy={192} r={13} fill="#5ed64a" />
+      {/* Plates down the back, getting smaller — a dino at a glance, even this small. */}
+      {([[300, 190, 7], [310, 197, 6], [318, 206, 4.5]] as Array<[number, number, number]>).map(
+        ([x, y, r]) => (
+          <path key={x} d={"M" + x + "," + y + " l" + r + "," + r * 1.6 + " l" + -r * 2 + ",0 z"} fill="#2f8c46" />
+        )
+      )}
+      <ellipse cx={322} cy={216} rx={11} ry={5} fill="#5ed64a" transform="rotate(18 322 216)" />
+      <circle cx={277} cy={189} r={2.3} fill="#3c3350" />
+      <circle cx={287} cy={189} r={2.3} fill="#3c3350" />
+      <path d="M274,197 q8,5 16,0" stroke="#2f8c46" strokeWidth={2.2} fill="none" strokeLinecap="round" />
+      <ellipse cx={298} cy={218} rx={10} ry={7} fill="#b6f0a6" />
+    </g>
+  ),
+
+  plushieDuck: () => (
+    <g transform="translate(-62 0)">
+      {hitPad(276, 182, 50, 50)}
+      <ellipse cx={300} cy={214} rx={17} ry={15} fill="#ffd23f" />
+      <circle cx={300} cy={194} r={12} fill="#ffd23f" />
+      <path d="M300,182 q7,-9 12,-2 q-6,3 -12,2 z" fill="#ffb347" />
+      <circle cx={296} cy={192} r={2.2} fill="#3c3350" />
+      <circle cx={305} cy={192} r={2.2} fill="#3c3350" />
+      {/* The bill, which is the only bit that has to be right. */}
+      <path d="M292,199 q8,7 16,0 q-8,4 -16,0 z" fill="#ff9f1c" />
+      <ellipse cx={287} cy={214} rx={6} ry={9} fill="#ffdf7a" transform="rotate(-16 287 214)" />
+      <path d="M294,229 h5 M303,229 h5" stroke="#ff9f1c" strokeWidth={3} strokeLinecap="round" />
+    </g>
+  ),
+
   plantBig: () => (
     <g>
       <path d="M116,232 l7,-34 h30 l7,34 z" fill="#d98452" />
@@ -1008,6 +1069,110 @@ export const FURNITURE: Record<string, FurnitureRender> = {
       <rect x={210} y={164} width={54} height={22} rx={11} fill="#fffdfa" transform="rotate(-4 237 175)" />
       <rect x={204} y={214} width={10} height={18} rx={4} fill={WOOD_DARK} />
       <rect x={358} y={214} width={10} height={18} rx={4} fill={WOOD_DARK} />
+    </g>
+  ),
+
+  /* A second cupboard, on the floor rather than the wall, and deep enough for two shelves. */
+  tallCupboard: (c) => (
+    <g>
+      <rect x={30} y={108} width={94} height={124} rx={7} fill="#7a9e6b" />
+      <rect x={34} y={112} width={86} height={110} rx={5} fill={shade("#7a9e6b", -22)} />
+      {c.open ? (
+        <g>
+          <rect x={38} y={116} width={78} height={102} rx={4} fill={shade("#7a9e6b", -52)} />
+          <rect x={40} y={146} width={74} height={4} rx={2} fill="#d8c8a8" />
+          <rect x={40} y={192} width={74} height={4} rx={2} fill="#d8c8a8" />
+          <rect x={14} y={112} width={16} height={112} rx={5} fill={shade("#7a9e6b", 14)} />
+          <rect x={124} y={112} width={16} height={112} rx={5} fill={shade("#7a9e6b", 14)} />
+        </g>
+      ) : (
+        <g>
+          <rect x={38} y={116} width={38} height={102} rx={4} fill={shade("#7a9e6b", -10)} />
+          <rect x={78} y={116} width={38} height={102} rx={4} fill={shade("#7a9e6b", -10)} />
+          <circle cx={71} cy={168} r={3.4} fill="#ffd23f" />
+          <circle cx={83} cy={168} r={3.4} fill="#ffd23f" />
+        </g>
+      )}
+      <rect x={36} y={228} width={10} height={4} rx={2} fill={shade("#7a9e6b", -46)} />
+      <rect x={108} y={228} width={10} height={4} rx={2} fill={shade("#7a9e6b", -46)} />
+    </g>
+  ),
+
+  /* Low and wide, with a long row of things along the top when it is open. */
+  sideboard: (c) => (
+    <g>
+      {hitPad(130, 178, 110, 54)}
+      <rect x={130} y={182} width={110} height={44} rx={6} fill="#c98a3f" />
+      {c.open ? (
+        <g>
+          <rect x={136} y={188} width={98} height={32} rx={4} fill={shade("#c98a3f", -48)} />
+          <rect x={112} y={186} width={22} height={34} rx={5} fill={shade("#c98a3f", 14)} />
+          <rect x={236} y={186} width={22} height={34} rx={5} fill={shade("#c98a3f", 14)} />
+        </g>
+      ) : (
+        <g>
+          <rect x={136} y={188} width={46} height={32} rx={4} fill={shade("#c98a3f", -18)} />
+          <rect x={188} y={188} width={46} height={32} rx={4} fill={shade("#c98a3f", -18)} />
+          <rect x={152} y={202} width={16} height={4} rx={2} fill="#ffd23f" />
+          <rect x={204} y={202} width={16} height={4} rx={2} fill="#ffd23f" />
+        </g>
+      )}
+      <rect x={136} y={226} width={8} height={6} rx={3} fill={shade("#c98a3f", -46)} />
+      <rect x={226} y={226} width={8} height={6} rx={3} fill={shade("#c98a3f", -46)} />
+    </g>
+  ),
+
+  /* Tall and narrow: three deep drawers rather than the low three-across one. */
+  tallDrawers: (c) => (
+    <g>
+      <rect x={226} y={126} width={74} height={106} rx={6} fill={WOOD} />
+      {[0, 1, 2].map((row) => (
+        <g key={row}>
+          <rect
+            x={232}
+            y={132 + row * 33}
+            width={62}
+            height={28}
+            rx={4}
+            fill={c.open ? shade(WOOD, -50) : WOOD_DARK}
+          />
+          {c.open ? (
+            // Pulled out: a lip along the front, so it reads as a drawer standing open
+            // rather than as a darker rectangle.
+            <rect x={228} y={152 + row * 33} width={70} height={7} rx={3.5} fill={shade(WOOD, 14)} />
+          ) : (
+            <rect x={250} y={143 + row * 33} width={26} height={5} rx={2.5} fill="#ffd23f" />
+          )}
+        </g>
+      ))}
+    </g>
+  ),
+
+  /* Two beds and a ladder. Only the bottom one can be climbed into — see SEATS. */
+  bunkBed: () => (
+    <g>
+      {hitPad(228, 96, 164, 136)}
+      {/* Posts */}
+      <rect x={232} y={96} width={10} height={136} rx={5} fill={WOOD_DARK} />
+      <rect x={378} y={96} width={10} height={136} rx={5} fill={WOOD_DARK} />
+      {/* Top bunk */}
+      <rect x={232} y={140} width={156} height={10} rx={5} fill={WOOD} />
+      <rect x={238} y={124} width={144} height={18} rx={7} fill="#7fb6ff" />
+      <rect x={244} y={116} width={38} height={14} rx={6} fill="#fffdfa" />
+      <path d="M236,132 h148" stroke={shade("#7fb6ff", -34)} strokeWidth={2.5} />
+      {/* Guard rail, which is the thing that says "bunk" rather than "two beds" */}
+      <rect x={246} y={104} width={130} height={5} rx={2.5} fill={WOOD} />
+      {/* Bottom bunk */}
+      <rect x={232} y={214} width={156} height={10} rx={5} fill={WOOD} />
+      <rect x={238} y={198} width={144} height={18} rx={7} fill="#ff8fc0" />
+      <rect x={244} y={190} width={38} height={14} rx={6} fill="#fffdfa" />
+      <path d="M236,206 h148" stroke={shade("#ff8fc0", -34)} strokeWidth={2.5} />
+      {/* Ladder */}
+      <rect x={352} y={150} width={5} height={66} rx={2.5} fill={shade(WOOD, 18)} />
+      <rect x={372} y={150} width={5} height={66} rx={2.5} fill={shade(WOOD, 18)} />
+      {[160, 178, 196].map((y) => (
+        <rect key={y} x={352} y={y} width={25} height={4} rx={2} fill={shade(WOOD, 18)} />
+      ))}
     </g>
   ),
 

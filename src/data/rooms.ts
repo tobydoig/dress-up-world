@@ -153,11 +153,18 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
     items: [
       { id: "bedroomRug", name: "Oval rug" },
       { id: "bed", name: "Bed" },
+      { id: "bunkBed", name: "Bunk beds" },
       { id: "wardrobe", name: "Wardrobe" },
       { id: "drawers", name: "Drawers" },
+      { id: "tallDrawers", name: "Tall drawers" },
+      { id: "tallCupboard", name: "Big cupboard" },
+      { id: "sideboard", name: "Sideboard" },
       { id: "bedsideLamp", name: "Lamp" },
       { id: "poster", name: "Poster" },
       { id: "plushie", name: "Plushie" },
+      { id: "plushieBunny", name: "Bunny" },
+      { id: "plushieDino", name: "Dino" },
+      { id: "plushieDuck", name: "Duck" },
     ],
   },
   {

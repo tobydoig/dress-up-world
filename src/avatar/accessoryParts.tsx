@@ -91,6 +91,19 @@ export const GLASSES_STYLES: Record<string, (p: AccessoryProps) => ReactElement>
     </g>
   ),
 
+  /*
+   * Shoved up out of the way. Sat on top of the head you see them from below, so the lenses
+   * are squashed flat — drawn round at this height they look like a second pair of eyes in
+   * the hair. No arms either: they would disappear into it.
+   */
+  onHead: (p) => (
+    <g fill="none" stroke={p.colour} strokeWidth={4}>
+      <ellipse cx={EYE.leftCx + 2} cy={50} rx={14} ry={8} fill="#ffffff" fillOpacity={0.22} />
+      <ellipse cx={EYE.rightCx - 2} cy={50} rx={14} ry={8} fill="#ffffff" fillOpacity={0.22} />
+      <path d={"M" + (EYE.leftCx + 16) + ",49 h" + (EYE.rightCx - EYE.leftCx - 32)} />
+    </g>
+  ),
+
   sunnies: (p) => (
     <g>
       <path

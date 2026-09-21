@@ -1821,3 +1821,49 @@ button {
   color: var(--ink-dim);
   opacity: 0.85;
 }
+
+/* ---------- watering ---------- */
+
+/*
+ * The can tips as it comes over a plant and rights itself when it leaves. The pivot is a
+ * fraction of the can's own box rather than a point in room coordinates, because the can is
+ * dragged and a fixed point would stop being the handle the moment it moved. The hit pad is
+ * inside the same group to keep that box from changing.
+ */
+.can-tip {
+  transform-box: fill-box;
+  transform-origin: 39% 24%;
+  transition: transform 0.25s ease-out;
+}
+
+.can-tip.is-pouring {
+  transform: rotate(32deg);
+}
+
+.can-drop {
+  animation: can-drop 0.72s linear infinite;
+}
+
+@keyframes can-drop {
+  0% {
+    transform: translateY(0) scale(0.5);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(24px) scale(1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .can-tip {
+    transition: none;
+  }
+
+  .can-drop {
+    animation: none;
+  }
+}

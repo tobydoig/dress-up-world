@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import { STALL_STOCK, THINGS } from "../data/things";
 import { CROPS, ripeness, type Crop } from "../data/growing";
 import type { Stroke } from "../lib/storage";
@@ -456,6 +456,21 @@ export function plotDrop(id: string): { x: number; y: number; w: number; h: numb
   return x === undefined ? null : plotBox(x);
 }
 
+/**
+ * A breath of wind. Everything green leans on the spot; see `.plant-sway` for the pivot.
+ *
+ * Each plant starts at its own point in the cycle, because three beds in a row nodding in
+ * time looks like one object rather than three plants. A tree takes longer over it than a
+ * lettuce, which is most of what makes it read as the heavier thing.
+ */
+function sway(phase: number, heavy = false): CSSProperties {
+  const seconds = heavy ? 5.6 : 4.2;
+  return {
+    animationDuration: seconds + "s",
+    animationDelay: -(((phase % 3) + 3) % 3) * (seconds / 3) + "s",
+  };
+}
+
 /** A low crop: a stem and leaves that get bigger, with the crop itself on once it is ripe. */
 function bush(cx: number, grown: number, crop: Crop): ReactElement {
   const h = 8 + grown * 30;
@@ -514,7 +529,11 @@ function plot(x: number, c: FurnitureCtx): ReactElement {
 
       {!crop && <ellipse cx={cx} cy={SOIL - 3} rx={8} ry={4} fill="#5c3f28" />}
       {crop && grown === 0 && <ellipse cx={cx} cy={SOIL - 4} rx={9} ry={5} fill="#5c3f28" />}
-      {crop && grown > 0 && (crop.kind === "tree" ? tree(cx, grown, crop) : bush(cx, grown, crop))}
+      {crop && grown > 0 && (
+        <g className="plant-sway" style={sway(Object.values(PLOT_X).indexOf(x), crop.kind === "tree")}>
+          {crop.kind === "tree" ? tree(cx, grown, crop) : bush(cx, grown, crop)}
+        </g>
+      )}
 
       {/* A drop, not a wilt. Nothing here suffers for being left — it just asks. */}
       {crop && c.thirsty && (
@@ -953,7 +972,10 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     <g>
       <path d="M116,232 l7,-34 h30 l7,34 z" fill="#d98452" />
       <path d="M116,198 h44 l-2,10 h-40 z" fill={shade("#d98452", -30)} />
+      {/* Only the leaves lean; a pot that swayed with them would look like it was falling. */}
       <path
+        className="plant-sway"
+        style={sway(2, true)}
         d="M138,198 q-30,-10 -28,-44 q28,4 28,44 M138,198 q30,-12 30,-46 q-30,6 -30,46 M138,198 q-4,-38 0,-54 q6,20 2,54"
         fill="#3fae5a"
       />
@@ -964,6 +986,8 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     <g>
       <path d="M246,232 l4,-20 h18 l4,20 z" fill="#c77dff" />
       <path
+        className="plant-sway"
+        style={sway(1)}
         d="M259,212 q-16,-6 -15,-24 q15,3 15,24 M259,212 q16,-7 16,-24 q-16,4 -16,24"
         fill="#5ed64a"
       />

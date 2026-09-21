@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
 import { capacityOf } from "./explore/furniture";
-import { CROPS } from "./data/growing";
+import { CROPS, isThirsty } from "./data/growing";
 import { DEFAULT_LOOK, randomLook, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
 import {
@@ -425,7 +425,13 @@ export function App() {
     updateRoom((room) => ({
       ...room,
       items: room.items.map((i) =>
-        i.id === plotId && i.planted ? { ...i, stage: i.stage + 1, wateredAt: Date.now() } : i
+        // Thirst is checked here and not only where this is called from. Watering happens
+        // while the can is still moving now, and two of them can land before a render has
+        // told the caller the first one counted. A plant takes one drink however many
+        // times it is offered.
+        i.id === plotId && i.planted && isThirsty(i.wateredAt, Date.now())
+          ? { ...i, stage: i.stage + 1, wateredAt: Date.now() }
+          : i
       ),
     }));
   }

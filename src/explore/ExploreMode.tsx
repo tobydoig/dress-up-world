@@ -256,11 +256,9 @@ interface DragState {
    */
   node: SVGGElement;
   /** The wrapper holding what is inside an open container, which travels with it. */
-  contents: SVGGElement | null;
+
   /** Set when someone is sitting on the dragged piece and has to be carried along. */
   rider: { node: SVGGElement; id: string; facing: number; who: string } | null;
-  /** The falling water, which only comes into being partway through a drag. */
-  water: SVGGElement | null;
   /** Where the drag has got to: a piece's offset, or the character's position. */
   x: number;
   y: number;
@@ -415,7 +413,7 @@ const Piece = memo(function Piece({
       {/* One wrapper carrying the piece's offset, with each thing placed in its slot inside
           it, so dragging the cupboard moves everything in it by moving a single node. */}
       {item.open && item.stored.length > 0 && (
-        <g data-contents={item.id} transform={pieceTransform(item.dx, item.dy)}>
+        <g data-follows={item.id} transform={pieceTransform(item.dx, item.dy)}>
           {item.stored.map((thingId, i) => {
             const slot = slotAt(item.id, i);
             const thing = THINGS[thingId];
@@ -844,16 +842,12 @@ export function ExploreMode({
     }
     const placed = pieceTransform(drag.x, drag.y);
     drag.node.setAttribute("transform", placed);
-    drag.contents?.setAttribute("transform", placed);
-    // Looked up here rather than when the drag started, because the water doesn't exist
-    // until the can is over a plant, which happens mid-drag. Checking isConnected rather
-    // than just null matters: React replaces this node on some renders, and a reference
-    // held across that goes on being written to long after it has left the document —
-    // which showed up as the water following the can and then stopping dead.
-    if (!drag.water?.isConnected) {
-      drag.water = svgRef.current?.querySelector("[data-water]") ?? null;
-    }
-    drag.water?.setAttribute("transform", placed);
+    // Everything drawn at some other depth that nonetheless belongs to this piece: what is
+    // inside an open cupboard, the water leaving a can, the pool of light under a lamp.
+    // Found fresh each time rather than once at the start, because some of them do not
+    // exist yet when the drag begins and React replaces others as it goes — a reference
+    // kept across that is written to long after it has left the document.
+    for (const layer of followersOf(drag.target.id)) layer.setAttribute("transform", placed);
     if (drag.rider) {
       const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
       if (place) {
@@ -871,6 +865,13 @@ export function ExploreMode({
   useEffect(() => {
     if (dragRef.current) applyDrag(dragRef.current);
   });
+
+  /** Layers drawn elsewhere in the scene that belong to a given piece. */
+  function followersOf(id: string): SVGGElement[] {
+    const svg = svgRef.current;
+    if (!svg) return [];
+    return [...svg.querySelectorAll<SVGGElement>('[data-follows="' + id + '"]')];
+  }
 
   function isOverBin(drag: DragState, ev: PointerEvent): boolean {
     if (!drag.binRect) {
@@ -951,13 +952,9 @@ export function ExploreMode({
       }
     }
 
-    // Anything that has to travel with the dragged piece, found once now rather than looked up
-    // on every move.
-    let contents: SVGGElement | null = null;
     let rider: DragState["rider"] = null;
     if (target.kind === "furniture") {
       const svg = svgRef.current;
-      contents = svg?.querySelector<SVGGElement>('[data-contents="' + target.id + '"]') ?? null;
       const current = roomStateRef.current;
       const who = riderOf(target.id);
       if (who) {
@@ -1004,7 +1001,11 @@ export function ExploreMode({
       if (drag.target.kind === "furniture") {
         const dragged = drag.target.id;
 
-        // The watering can is tipped over a bed by being dragged onto it.
+        // The can tips over a bed as it arrives, and waters it there and then. Waiting for
+        // her to let go meant the watering was decided by where the pointer happened to be
+        // at the end, which is not where the can looks like it is — and it needed a lit-up
+        // rectangle to explain itself. Doing it on arrival needs no explaining: the plant
+        // grows, or it doesn't, and that is the whole of the feedback.
         if (dragged === WATERING_CAN) {
           const at = toRoom(ev.clientX, ev.clientY);
           const bed = at ? plotUnder(at) : null;
@@ -1012,6 +1013,7 @@ export function ExploreMode({
           if (id !== drag.overPlot) {
             drag.overPlot = id;
             setOverPlot(id);
+            if (id) water(id);
           }
         }
       }
@@ -1062,15 +1064,6 @@ export function ExploreMode({
         return;
       }
 
-      if (drag.target.kind === "furniture" && drag.overPlot) {
-        water(drag.overPlot);
-        // Back to its spot afterwards. Left where it was dropped it sits on top of the bed
-        // it just watered, and the next drag is a zero-distance move — which reads as a tap
-        // and waters nothing.
-        onMoveFurniture(WATERING_CAN, 0, 0);
-        return;
-      }
-
       if (drag.target.kind === "avatar") settleAvatar(drag.target.id, drag.x, drag.y);
       playPop();
     };
@@ -1085,9 +1078,7 @@ export function ExploreMode({
       scale,
       bounds,
       node,
-      contents,
       rider,
-      water: null,
       x: originX,
       y: originY,
       pose: (target.kind === "avatar" && placeOf(target.id)?.pose) || "stand",
@@ -1620,7 +1611,7 @@ export function ExploreMode({
               playTap();
             }}
           >
-            👥 {inScene.length}
+            🧒 {inScene.length}
           </button>
           <button
             className="chip-btn chip-mode"
@@ -1652,9 +1643,16 @@ export function ExploreMode({
             aria-label={room.name}
           >
             <defs>
+              {/*
+                * Gentle on purpose. The light is drawn over everything, characters included,
+                * so that a lamp brightens whoever is standing under it rather than leaving
+                * them a silhouette — and at nine tenths opacity, screened, that stopped
+                * looking like light falling on a face and started looking like a white disc
+                * sitting in front of one. This still lifts the 0.54 of nightfall well clear.
+                */}
               <radialGradient id="lamp-glow">
-                <stop offset="0%" stopColor="#fff0c0" stopOpacity={0.92} />
-                <stop offset="55%" stopColor="#ffd98a" stopOpacity={0.4} />
+                <stop offset="0%" stopColor="#fff0c0" stopOpacity={0.5} />
+                <stop offset="55%" stopColor="#ffd98a" stopOpacity={0.22} />
                 <stop offset="100%" stopColor="#ffd98a" stopOpacity={0} />
               </radialGradient>
             </defs>
@@ -1691,7 +1689,7 @@ export function ExploreMode({
                 the front of it. It carries the can's own transform, and the drag keeps that
                 in step the same way it does the contents of a carried cupboard. */}
             {pouringCan && (
-              <g data-water={WATERING_CAN} transform={pieceTransform(pouringCan.dx, pouringCan.dy)}>
+              <g data-follows={WATERING_CAN} transform={pieceTransform(pouringCan.dx, pouringCan.dy)}>
                 {canWater()}
               </g>
             )}
@@ -1760,14 +1758,16 @@ export function ExploreMode({
             {roomState.items
               .filter((item) => {
                 if (!PLOTS.has(item.id)) return false;
-                if (held) return !!CROPS[held.thingId] && !item.planted;
-                return draggingKey === WATERING_CAN && !!item.planted;
+                // Only for a seed looking for somewhere to go. The can needs nothing drawn
+                // for it: it waters whatever it is carried over, and the plant growing is
+                // the whole of the answer.
+                return !!held && !!CROPS[held.thingId] && !item.planted;
               })
               .map((item) => {
                 const box = plotDrop(item.id);
                 if (!box) return null;
                 const isOver =
-                  (held?.over?.kind === "plot" && held.over.id === item.id) || overPlot === item.id;
+                  held?.over?.kind === "plot" && held.over.id === item.id;
                 return (
                   <rect
                     key={item.id}
@@ -1801,14 +1801,16 @@ export function ExploreMode({
                 {lit.map((item) => {
                   const glow = LIGHT_GLOW[item.id];
                   return (
-                    <ellipse
+                    // A wrapper carrying the piece's offset rather than an ellipse placed at
+                    // the sum of it: the light is then one more thing that follows the lamp
+                    // while it is being carried, instead of staying behind on the floor.
+                    <g
                       key={item.id}
-                      cx={glow.cx + item.dx}
-                      cy={FURNITURE_DROP + glow.cy + item.dy}
-                      rx={glow.rx}
-                      ry={glow.ry}
-                      fill="url(#lamp-glow)"
-                    />
+                      data-follows={item.id}
+                      transform={pieceTransform(item.dx, item.dy)}
+                    >
+                      <ellipse cx={glow.cx} cy={glow.cy} rx={glow.rx} ry={glow.ry} fill="url(#lamp-glow)" />
+                    </g>
                   );
                 })}
               </g>

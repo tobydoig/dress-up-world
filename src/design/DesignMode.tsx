@@ -245,8 +245,8 @@ export function DesignMode({
               playTap();
             }}
           >
-            <span className="tab-icon">👥</span>
-            <span className="tab-label">Who</span>
+            <span className="tab-icon">🧒</span>
+            <span className="tab-label">Avatar</span>
           </button>
           {CATEGORIES.map((c) => (
             <button

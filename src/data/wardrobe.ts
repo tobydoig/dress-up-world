@@ -240,7 +240,7 @@ export const CATEGORIES: CategoryDef[] = [
   {
     id: "mouth",
     label: "Mouth",
-    icon: "😀",
+    icon: "👄",
     allowNone: false,
     items: [
       { id: "smile", name: "Smile" },

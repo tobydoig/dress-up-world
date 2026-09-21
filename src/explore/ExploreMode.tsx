@@ -18,6 +18,7 @@ import {
   FLOATING,
   LAMPS,
   LIGHT_GLOW,
+  modeCount,
   PAD,
   POPPED_BALLOONS,
   STACKABLE,
@@ -1129,6 +1130,13 @@ export function ExploreMode({
 
     if (LAMPS.has(id)) {
       onUpdateFurniture(id, { on: !item.on });
+      playTap();
+      return;
+    }
+
+    const looks = modeCount(id);
+    if (looks > 1) {
+      onUpdateFurniture(id, { mode: (item.mode + 1) % looks });
       playTap();
       return;
     }

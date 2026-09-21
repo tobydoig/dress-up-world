@@ -42,6 +42,8 @@ export interface PlacedFurniture {
   planted: string | null;
   stage: number;
   wateredAt: number;
+  /** Which of its looks the piece is showing; what that means is up to the piece. */
+  mode: number;
 }
 
 export type AvatarPose = "stand" | "sit" | "lie";
@@ -113,6 +115,7 @@ export function placeFurniture(id: string): PlacedFurniture {
     planted: null,
     stage: 0,
     wateredAt: 0,
+    mode: 0,
   };
 }
 
@@ -187,6 +190,7 @@ function normaliseItem(raw: Partial<PlacedFurniture> & { id: string }): PlacedFu
     planted: typeof raw.planted === "string" && CROPS[raw.planted] ? raw.planted : null,
     stage: Math.max(0, Math.round(num(raw.stage, 0))),
     wateredAt: Math.max(0, num(raw.wateredAt, 0)),
+    mode: Math.max(0, Math.round(num(raw.mode, 0))),
   };
 }
 

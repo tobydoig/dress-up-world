@@ -1687,3 +1687,35 @@ button {
     transition: none !important;
   }
 }
+
+/* ---------- what's on the computer ---------- */
+
+/* Two stacked copies of the same rows; scrolling exactly one copy's height and starting over
+   makes a loop with no visible jump. --screen-block is that height, set where it's drawn. */
+.screen-code {
+  animation: screen-code 4.5s linear infinite;
+}
+
+@keyframes screen-code {
+  from { transform: translateY(0); }
+  to { transform: translateY(var(--screen-block)); }
+}
+
+/* Each star sits on its own rotated arm, so one keyframe flying along +x gives a whole
+   starfield once the arms point different ways and the delays are staggered. */
+.screen-star {
+  animation: screen-star 2.4s linear infinite;
+}
+
+@keyframes screen-star {
+  0% { transform: translateX(2px) scale(0.3); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateX(34px) scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-code,
+  .screen-star {
+    animation: none;
+  }
+}

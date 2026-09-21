@@ -76,8 +76,10 @@ export interface Placement {
 export interface RoomState {
   items: PlacedFurniture[];
   /**
-   * Where each character who is out is standing, by character id. Somebody who is out but has
-   * never been in this room has no entry, and starts at their spot in the line-up.
+   * Who is in this room, and where they are standing. Being in a room IS having a place in
+   * it — there is no separate list of who is out, because a character is only ever in one
+   * room and that room is the one holding their spot. Rooms she hasn't put anyone in are
+   * empty, which is what a room with nobody in it should be.
    */
   places: Record<string, Placement>;
 }
@@ -85,8 +87,6 @@ export interface RoomState {
 export interface GameSave {
   characters: SavedCharacter[];
   activeId: string | null;
-  /** Who is out in the world, in the order they came out. At most MAX_CAST of them. */
-  inScene: string[];
   rooms: Record<RoomId, RoomState>;
   lastRoom: RoomId;
   /** What the character is carrying. Follows them from room to room. */
@@ -99,8 +99,8 @@ const KEY = "dress-up-world:save:v1";
 export const AVATAR_HOME = { x: 200, y: 408 };
 
 /**
- * How many can be out at once. Three fills the room without turning it into a crowd, and it
- * is few enough that she can still tell which one she is holding.
+ * How many can be in one room at once. Three fills it without turning it into a crowd, and
+ * it is few enough that she can still tell which one she is holding.
  */
 export const MAX_CAST = 3;
 
@@ -175,7 +175,6 @@ export function emptySave(): GameSave {
   return {
     characters: [],
     activeId: null,
-    inScene: [],
     rooms: starterRooms(),
     lastRoom: "playroom",
     basket: [],
@@ -347,21 +346,43 @@ export function loadSave(): GameSave {
       for (const who of Object.keys(places)) if (!known.has(who)) delete places[who];
     }
 
-    const inScene = (Array.isArray(parsed.inScene) ? parsed.inScene : [])
-      .filter((id): id is string => typeof id === "string" && known.has(id))
-      .filter((id, i, all) => all.indexOf(id) === i);
-    // Who is out is hers to choose, and the one she is dressing needn't be one of them — but
-    // a save with characters in it and nobody out would open on an empty room, which reads
-    // as the game having lost them.
-    if (inScene.length === 0 && activeId) inScene.push(activeId);
     const lastRoom = ROOM_ORDER.includes(parsed.lastRoom as RoomId) ? (parsed.lastRoom as RoomId) : "playroom";
+
+    /*
+     * Characters used to be "out" globally and to have a spot in every room they had been
+     * into, which is how they came to follow her from room to room. Now they live in one
+     * room at a time, so the ones that were out are gathered into the room she was last in
+     * and their spots elsewhere are dropped. That room is the one she last saw them in.
+     */
+    const legacyOut = (parsed as { inScene?: unknown }).inScene;
+    const wasOut = (Array.isArray(legacyOut) ? legacyOut : []).filter(
+      (id): id is string => typeof id === "string" && known.has(id)
+    );
+    if (wasOut.length > 0) {
+      for (const id of ROOM_ORDER) {
+        const places = rooms[id].places;
+        for (const who of wasOut) {
+          if (id === lastRoom) continue;
+          delete places[who];
+        }
+      }
+      const here = rooms[lastRoom].places;
+      wasOut.slice(0, MAX_CAST).forEach((who, i) => {
+        if (!here[who]) here[who] = castHome(i, Math.min(wasOut.length, MAX_CAST));
+      });
+    }
+
+    // Never more than a roomful, however a save came to hold more.
+    for (const id of ROOM_ORDER) {
+      const places = rooms[id].places;
+      for (const who of Object.keys(places).slice(MAX_CAST)) delete places[who];
+    }
     const savedTime = (parsed.timeOfDay as string) === LEGACY_DUSK ? "night" : parsed.timeOfDay;
     const timeOfDay = TIME_ORDER.includes(savedTime as TimeOfDay) ? (savedTime as TimeOfDay) : "day";
 
     return {
       characters,
       activeId,
-      inScene: inScene.slice(0, MAX_CAST),
       rooms,
       lastRoom,
       basket: things(parsed.basket).slice(0, BASKET_LIMIT),

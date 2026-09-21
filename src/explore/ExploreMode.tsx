@@ -51,7 +51,6 @@ import type { AvatarLook } from "../data/wardrobe";
 import {
   BASKET_LIMIT,
   MAX_CAST,
-  castHome,
   type AvatarPose,
   type Placement,
   type PlacedFurniture,
@@ -702,7 +701,6 @@ export function ExploreMode({
   onHarvest,
   characters,
   activeId,
-  inScene,
   onToggleInScene,
   onFocusCharacter,
   onNewCharacter,
@@ -736,7 +734,6 @@ export function ExploreMode({
   onHarvest: (plotId: string) => void;
   characters: SavedCharacter[];
   activeId: string | null;
-  inScene: string[];
   onToggleInScene: (id: string) => void;
   onFocusCharacter: (id: string) => void;
   onNewCharacter: () => void;
@@ -783,20 +780,16 @@ export function ExploreMode({
   const basketRef = useRef(basket);
   basketRef.current = basket;
   /**
-   * Everyone who is out, with the look they were saved with and where they are standing in
-   * this room. Somebody who has never been in here yet has no saved spot, so they take their
-   * place in the line-up — which is the middle of the floor when there is only one of them,
-   * exactly where a lone character has always stood.
+   * Who is in this room, with the look they were saved with and where they are standing.
+   * Read straight off the room, because being in a room is having a place in it — there is
+   * no second list that could disagree with this one.
    */
-  const cast: Array<{ id: string; look: AvatarLook; place: Placement }> = inScene
-    .map((id, i) => {
+  const cast: Array<{ id: string; look: AvatarLook; place: Placement }> = Object.entries(
+    roomState.places
+  )
+    .map(([id, place]) => {
       const character = characters.find((c) => c.id === id);
-      if (!character) return null;
-      return {
-        id,
-        look: character.look,
-        place: roomState.places[id] ?? castHome(i, inScene.length),
-      };
+      return character ? { id, look: character.look, place } : null;
     })
     .filter((member): member is { id: string; look: AvatarLook; place: Placement } => member !== null);
 
@@ -1630,14 +1623,16 @@ export function ExploreMode({
           </button>
           <button
             className="chip-btn chip-ghost"
-            aria-label={"Choose who is here — " + inScene.length + " of " + characters.length + " out"}
+            aria-label={
+              "Choose who is in " + room.name + " — " + cast.length + " of " + characters.length
+            }
             onClick={() => {
               sheetOpenedAt.current = Date.now();
               setCastOpen(true);
               playTap();
             }}
           >
-            🧒 {inScene.length}
+            🧒 {cast.length}
           </button>
           <button
             className="chip-btn chip-mode"
@@ -1739,7 +1734,7 @@ export function ExploreMode({
                 the one in front — and the one your finger lands on. */}
             {[...cast]
               .sort((a, b) => a.place.y - b.place.y)
-              .map((member) => (
+              .map((member, index) => (
                 <Character
                   key={member.id}
                   id={member.id}
@@ -1748,7 +1743,7 @@ export function ExploreMode({
                   x={member.place.x}
                   y={member.place.y}
                   pose={member.place.pose}
-                  phase={phaseOf(inScene.indexOf(member.id), cast.length)}
+                  phase={phaseOf(index, cast.length)}
                   chewing={chewingId === member.id}
                   mouthOpen={held?.over?.kind === "mouth" && held.over.id === member.id}
                   dragging={draggingKey === "avatar:" + member.id}
@@ -2059,18 +2054,19 @@ export function ExploreMode({
         >
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-head">
-              <strong>Who is playing?</strong>
+              <strong>Who is in the {room.name.toLowerCase()}?</strong>
               <button className="sheet-close" aria-label="Close" onClick={() => setCastOpen(false)}>
                 ✕
               </button>
             </div>
             <p className="sheet-hint">
-              Tap to bring someone out, or to send them back. Up to {MAX_CAST} at a time.
+              Tap to bring someone here, or to send them off. {MAX_CAST} at a time, and
+              everybody stays where you leave them.
             </p>
             <div className="sheet-scroll">
               <div className="sheet-grid">
                 {characters.map((c) => {
-                  const out = inScene.includes(c.id);
+                  const out = cast.some((member) => member.id === c.id);
                   return (
                     <button
                       key={c.id}

@@ -285,6 +285,34 @@ function legLimbs(
 }
 
 /**
+ * A leg covered up to a fraction of its whole length, however many segments it is made of.
+ * `legLimbs`' own `reach` measures against the first segment alone, which is right for shorts
+ * — sitting, the thigh is all there is above the knee — but wrong for anything meant to stop
+ * below it: three-quarter leggings would end at a seated knee instead of partway down the shin.
+ */
+function cropLeg(side: "left" | "right", pose: Pose, reach: number): Segment[] {
+  const segments = legSegments(side, pose);
+  const lengths = segments.map((s) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1));
+  let left = lengths.reduce((a, b) => a + b, 0) * reach;
+  const covered: Segment[] = [];
+  for (let i = 0; i < segments.length && left > 0; i++) {
+    covered.push(left >= lengths[i] ? segments[i] : along(segments[i], left / lengths[i]));
+    left -= lengths[i];
+  }
+  return covered;
+}
+
+/** The last `t` of a segment, for drawing a cuff on the end of one. */
+function tailOf(line: Segment, t: number): Segment {
+  return {
+    x1: line.x1 + (line.x2 - line.x1) * (1 - t),
+    y1: line.y1 + (line.y2 - line.y1) * (1 - t),
+    x2: line.x2,
+    y2: line.y2,
+  };
+}
+
+/**
  * The pleated skirt's hem zigzags instead of curving, which is what makes it read as folded
  * fabric rather than a bell. Both the outline and the fold lines are generated from these, so
  * the creases always land exactly on the points of the hem.
@@ -321,10 +349,19 @@ export const BOTTOM_STYLES: Record<string, (p: GarmentProps) => ReactElement> = 
     </g>
   ),
 
+  /* Three-quarter length. Full length they were the same silhouette as the jeans, and the
+     only thing telling them apart was how tight they were — which at this size is nothing. */
   leggings: (p) => (
     <g>
-      {legLimbs("left", p.pose, LEG.width + 1, p.colour)}
-      {legLimbs("right", p.pose, LEG.width + 1, p.colour)}
+      {(["left", "right"] as const).flatMap((side) => {
+        const parts = cropLeg(side, p.pose, 0.76);
+        const last = parts[parts.length - 1];
+        return [
+          ...parts.map((segment, i) => limb(segment, LEG.width + 1, p.colour, side + i)),
+          // A cuff, so it reads as where the legging stops rather than where the drawing did.
+          limb(tailOf(last, 0.16), LEG.width + 3, shade(p.colour, -24), side + "cuff"),
+        ];
+      })}
       <path d="M69,238 L131,238 L133,268 Q100,279 67,268 Z" fill={p.colour} />
     </g>
   ),
@@ -384,8 +421,16 @@ export const BOTTOM_STYLES: Record<string, (p: GarmentProps) => ReactElement> = 
     <g>
       <path d="M69,238 L131,238 L135,302 Q100,311 65,302 Z" fill={p.colour} />
       <rect x={68} y={236} width={64} height={10} rx={3} fill={shade(p.colour, -32)} />
-      {/* The vent at the back — the detail that says "smart" rather than "summer". */}
-      <path d="M100,288 v18" stroke={shade(p.colour, -26)} strokeWidth={3} strokeLinecap="round" />
+      {/* A turned-up hem says "tailored". The back vent this replaces was a dark line straight
+          down the middle of the hem, which at this size just looked like a gap between two
+          legs — so the skirt read as a pair of shorts. */}
+      <path
+        d="M66.5,295 Q100,304 133.5,295"
+        fill="none"
+        stroke={shade(p.colour, -20)}
+        strokeWidth={2.5}
+        strokeLinecap="round"
+      />
     </g>
   ),
 };

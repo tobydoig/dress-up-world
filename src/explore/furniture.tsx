@@ -128,6 +128,22 @@ function glass(children: ReactElement): ReactElement {
   );
 }
 
+/*
+ * The can is raised clear of the rim of the bed and tipped: two plain SVG transform
+ * attributes, with a CSS transition over the top to ease between them.
+ *
+ * Attributes rather than CSS transforms because rotate() in an attribute takes its pivot in
+ * user units — the handle, in the same authored coordinates the can is drawn from, which
+ * stays the handle however far the can has been dragged. The CSS equivalent has to go
+ * through transform-box, and getting that wrong is what sent the water off the side of the
+ * garden below. Where the can ends up therefore does not depend on the transition running
+ * at all; the transition only decides how quickly it gets there.
+ */
+const CAN_LIFT = 30;
+const CAN_TIP = 32;
+const CAN_PIVOT = "356 197";
+const CAN_EASE = { transition: "transform 0.25s ease-out" };
+
 /** Lines of something scrolling past, in the local coordinates of `glass`. */
 const CODE_ROWS: Array<[number, number, string]> = [
   [0, 26, "#4fe0c0"],
@@ -1046,10 +1062,11 @@ export const FURNITURE: Record<string, FurnitureRender> = {
   /** Dragged onto a bed to water it. Furniture rather than something carried, so watering
    *  is picking the can up and tipping it over the plant. */
   wateringCan: (c) => (
-    <g>
-      {/* The hit pad is inside the tipping group on purpose: it fixes the group's bounding
-          box, which is what the pivot below is a fraction of. */}
-      <g className={"can-tip" + (c.pouring ? " is-pouring" : "")}>
+    /* Two transforms, one each on its own group: the lift raises the whole can and its water
+       together, the tip below only turns the can. Tipping alone put the rose an inch under
+       the rim of the bed, so the water started below the pot and could never go in it. */
+    <g style={CAN_EASE} transform={"translate(0 " + (c.pouring ? -CAN_LIFT : 0) + ")"}>
+      <g style={CAN_EASE} transform={"rotate(" + (c.pouring ? CAN_TIP : 0) + " " + CAN_PIVOT + ")"}>
         {hitPad(330, 186, 66, 46)}
         <path d="M338,204 h34 l-4,28 h-26 z" fill="#5ed64a" />
         {/* Drawn from inside the body outwards, so the spout is part of the can rather than
@@ -1066,8 +1083,9 @@ export const FURNITURE: Record<string, FurnitureRender> = {
         <path d="M340,199 q9,-15 22,-2" stroke="#3fae5a" strokeWidth={4.5} fill="none" strokeLinecap="round" />
         <ellipse cx={391} cy={198} rx={6} ry={4.5} fill="#9be07a" transform="rotate(-32 391 198)" />
       </g>
-      {/* Outside the tipping group, so the drops don't change the box the pivot is measured
-          against — and placed where the rose ends up once the can has tipped. */}
+      {/* Outside the tip so they fall straight down rather than at the angle of the spout,
+          inside the lift so they rise with the can. Placed where the rose ends up once it
+          has tipped. */}
       {c.pouring && (
         <g>
           {[0, 1, 2].map((i) => (

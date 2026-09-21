@@ -121,6 +121,13 @@ button {
   line-height: 1;
 }
 
+/* The button that swaps modes is the same button in both of them, so it should not change
+   size when it changes label. Wide enough for the longer of the two. */
+.chip-mode {
+  min-width: 104px;
+  text-align: center;
+}
+
 .chip-btn:active {
   transform: translateY(3px);
   box-shadow: 0 0 0 #c93b78, 0 3px 8px rgba(255, 91, 161, 0.3);
@@ -343,12 +350,17 @@ button {
   transform: scale(0.92);
 }
 
-/* ---------- mute ---------- */
+/* ---------- the controls that float over the scene ---------- */
 
-.mute-btn {
+.float-controls {
   position: fixed;
   top: calc(var(--safe-top) + 52px);
   right: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.float-btn {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -357,6 +369,11 @@ button {
   border: 1.5px solid var(--line);
   display: grid;
   place-items: center;
+  transition: transform 0.12s ease;
+}
+
+.float-btn:active {
+  transform: scale(0.9);
 }
 
 /* ---------- avatar animation ---------- */
@@ -546,6 +563,11 @@ button {
   display: flex;
   gap: 10px;
   padding: 12px 12px 0;
+}
+
+/* Only the characters button lives here now that saving happens on the way out. */
+.actions .btn-secondary:only-child {
+  flex: 1 1 auto;
 }
 
 .btn-secondary,

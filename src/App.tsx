@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
 import { capacityOf } from "./explore/furniture";
-import { DEFAULT_LOOK, type AvatarLook } from "./data/wardrobe";
+import { DEFAULT_LOOK, randomLook, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
 import {
   AVATAR_HOME,
@@ -16,7 +16,7 @@ import {
   type GameSave,
   type PlacedFurniture,
 } from "./lib/storage";
-import { isMuted, setMuted } from "./lib/sound";
+import { isMuted, playPop, setMuted } from "./lib/sound";
 
 type Mode = "design" | "explore";
 
@@ -318,17 +318,35 @@ export function App() {
         />
       )}
 
-      <button
-        className="mute-btn"
-        aria-label={muted ? "Turn sound on" : "Turn sound off"}
-        onClick={() => {
-          const next = !muted;
-          setMuted(next);
-          setMutedState(next);
-        }}
-      >
-        {muted ? "🔇" : "🔊"}
-      </button>
+      {/* The two things that float over the scene rather than living in the bar. Kept in one
+          row here, rather than each positioning itself, so the spacing isn't two magic
+          numbers that have to agree. */}
+      <div className="float-controls">
+        {mode === "design" && (
+          <button
+            className="float-btn"
+            aria-label="Surprise me — dress this character at random"
+            onClick={() => {
+              setLook(randomLook());
+              playPop();
+            }}
+          >
+            🎲
+          </button>
+        )}
+        <button
+          className="float-btn"
+          aria-label={muted ? "Turn sound on" : "Turn sound off"}
+          onClick={() => {
+            const next = !muted;
+            setMuted(next);
+            setMutedState(next);
+          }}
+        >
+          {muted ? "🔇" : "🔊"}
+        </button>
+      </div>
+
     </>
   );
 }

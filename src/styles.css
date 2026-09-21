@@ -2180,3 +2180,54 @@ button {
     animation: none;
   }
 }
+
+/* ---------- blowing back up, and falling over ---------- */
+
+/*
+ * A balloon swells from the knot at its bottom, because that is where the air goes in and
+ * because growing from the middle looks like a bubble rather than a balloon. Slight
+ * overshoot at the end: they are rubber.
+ */
+.balloon-fill {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: balloon-fill 0.9s cubic-bezier(0.34, 1.4, 0.5, 1) both;
+}
+
+/* The second one a beat behind, so they don't inflate as one object. */
+.balloon-fill-late {
+  animation-delay: 0.16s;
+}
+
+@keyframes balloon-fill {
+  from {
+    transform: scale(0.12);
+  }
+  70% {
+    transform: scale(1.08);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/*
+ * Blocks move by transition rather than by being swapped for a second drawing, which is
+ * what makes them fall AND build back up for one set of positions. The delay is set per
+ * block where they are drawn — the higher one starts, the later it goes.
+ */
+.block-piece {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  transition: transform 0.45s cubic-bezier(0.45, 0.05, 0.4, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .balloon-fill {
+    animation: none;
+  }
+
+  .block-piece {
+    transition: none;
+  }
+}

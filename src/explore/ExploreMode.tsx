@@ -147,12 +147,18 @@ const SEATS: Record<string, Spot[]> = {
    * that is actually free: a character clamps at x=336 and at the floor line, so vertically
    * the two are barely distinguishable and the bottom one won every time.
    */
+  /*
+   * The two y values are each 20 above their own mattress's top surface — the same gap the
+   * single bed uses, which is what puts a lying figure ON the bedding rather than sunk into
+   * it or, as these were, hanging down the front of it. Bottom mattress starts at 264,
+   * top at 190.
+   */
   bunkBed: [
-    { zones: [{ x: 238, y: 330 }, { x: 300, y: 282 }], x: 392, y: 282, pose: "lie" },
+    { zones: [{ x: 238, y: 330 }, { x: 300, y: 282 }], x: 388, y: 244, pose: "lie" },
     {
       zones: [{ x: 372, y: 330 }, { x: 372, y: 250 }, { x: 320, y: 196 }],
-      x: 392,
-      y: 196,
+      x: 388,
+      y: 170,
       pose: "lie",
     },
   ],
@@ -198,8 +204,12 @@ function seatSpots(id: string): number[] {
 /** How close the character has to be dropped for it to count as sitting on something. */
 const SEAT_SNAP = 78;
 
-/** How long a popped balloon stays popped. */
-const REINFLATE_MS = 2200;
+/** How long a popped balloon stays popped, and then how long it takes filling back up. */
+const REINFLATE_MS = 1700;
+const FILL_MS = 900;
+
+/** How long the blocks lie where they fell before building themselves back up. */
+const TOPPLE_MS = 2200;
 
 /** How long "Yum!" hangs in the air after something is eaten. */
 const REACTION_MS = 1100;
@@ -447,6 +457,7 @@ const Piece = memo(function Piece({
   popped,
   thirsty,
   pouring,
+  knocked,
   onGrab,
   onGrabThing,
 }: {
@@ -456,10 +467,12 @@ const Piece = memo(function Piece({
   /** Passed in rather than worked out here: a fresh object every render would defeat memo. */
   thirsty: boolean;
   pouring: boolean;
+  /** Just been knocked about — see FurnitureCtx. */
+  knocked: boolean;
   onGrab: (e: ReactPointerEvent<SVGGElement>, id: string) => void;
   onGrabThing: (e: ReactPointerEvent<SVGGElement>, from: ThingSource, thingId: string) => void;
 }): ReactElement | null {
-  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, { ...item, thirsty, pouring });
+  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, { ...item, thirsty, pouring, knocked });
   if (!art) return null;
 
   return (
@@ -828,7 +841,13 @@ export function ExploreMode({
   onDesign: () => void;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [poppedAt, setPoppedAt] = useState<number | null>(null);
+  /**
+   * Balloons go whole, popped, filling, whole. The middle step is what makes them come back
+   * by being blown up rather than by simply reappearing.
+   */
+  const [balloons, setBalloons] = useState<"whole" | "popped" | "filling">("whole");
+  /** When the tower of blocks was knocked over, or null while it is standing. */
+  const [toppledAt, setToppledAt] = useState<number | null>(null);
   const [castOpen, setCastOpen] = useState(false);
   const [tray, setTray] = useState<Tray | null>(null);
   /** Which basket slots are waiting in the pot. Indices, so two of the same thing still work. */
@@ -1421,9 +1440,17 @@ export function ExploreMode({
     }
 
     if (id === "balloons") {
-      if (poppedAt === null) {
-        setPoppedAt(Date.now());
+      if (balloons === "whole") {
+        setBalloons("popped");
         playBang();
+      }
+      return;
+    }
+
+    if (id === "blocks") {
+      if (toppledAt === null) {
+        setToppledAt(Date.now());
+        playThud();
       }
       return;
     }
@@ -1807,12 +1834,20 @@ export function ExploreMode({
     playChime();
   }
 
-  // Balloons come back a couple of seconds after they're popped.
+  // Balloons come back a couple of seconds after they're popped, and take a moment filling.
   useEffect(() => {
-    if (poppedAt === null) return;
-    const timer = setTimeout(() => setPoppedAt(null), REINFLATE_MS);
+    if (balloons === "whole") return;
+    const wait = balloons === "popped" ? REINFLATE_MS : FILL_MS;
+    const timer = setTimeout(() => setBalloons(balloons === "popped" ? "filling" : "whole"), wait);
     return () => clearTimeout(timer);
-  }, [poppedAt]);
+  }, [balloons]);
+
+  // And the blocks build themselves back up.
+  useEffect(() => {
+    if (toppledAt === null) return;
+    const timer = setTimeout(() => setToppledAt(null), TOPPLE_MS);
+    return () => clearTimeout(timer);
+  }, [toppledAt]);
 
   useEffect(() => {
     if (reaction === null) return;
@@ -1992,7 +2027,11 @@ export function ExploreMode({
                 key={item.id}
                 item={item}
                 dragging={draggingKey === item.id}
-                popped={item.id === "balloons" && poppedAt !== null}
+                popped={item.id === "balloons" && balloons === "popped"}
+                knocked={
+                  (item.id === "balloons" && balloons === "filling") ||
+                  (item.id === "blocks" && toppledAt !== null)
+                }
                 thirsty={item.planted !== null && isThirsty(item.wateredAt, now)}
                 // overPlot is only ever set over a bed with something growing in it, so the
                 // can tips for a plant and not for bare earth.

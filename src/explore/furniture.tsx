@@ -28,6 +28,8 @@ export interface FurnitureCtx {
   mode: number;
   /** Held over a plant that is about to get a drink. Worked out by the room, like `thirsty`. */
   pouring: boolean;
+  /** Just been knocked about: balloons filling back up, blocks in a heap on the floor. */
+  knocked: boolean;
 }
 
 export type FurnitureRender = (ctx: FurnitureCtx) => ReactElement;
@@ -44,6 +46,7 @@ export const CATALOGUE_CTX: FurnitureCtx = {
   thirsty: false,
   mode: 0,
   pouring: false,
+  knocked: false,
 };
 
 /**
@@ -53,7 +56,7 @@ export const CATALOGUE_CTX: FurnitureCtx = {
  */
 
 /** Hangs on the wall; never comes below the floor line. */
-export const WALL_MOUNTED = new Set(["poster", "shelves", "pictureFrame", "cupboard"]);
+export const WALL_MOUNTED = new Set(["poster", "shelves", "pictureFrame", "cupboard", "wallUnits"]);
 
 /** Drifts about in the air, above the floor or the wall. */
 export const FLOATING = new Set(["balloons"]);
@@ -74,6 +77,7 @@ export const STACKABLE = new Set([
 export const CONTAINERS = new Set([
   "fridge", "wardrobe", "toyBox", "cupboard", "drawers",
   "tallCupboard", "sideboard", "tallDrawers",
+  "wallUnits", "baseUnits", "larder",
 ]);
 
 /** Pieces that sell things. Tapping one opens its stall. */
@@ -290,6 +294,9 @@ export const CONTAINER_SLOTS: Record<string, Slots> = {
   tallCupboard: { x: 48, y: 126, cols: 3, rows: 2, stepX: 26, stepY: 46, scale: 0.46 },
   sideboard: { x: 146, y: 196, cols: 4, rows: 1, stepX: 24, stepY: 0, scale: 0.42 },
   tallDrawers: { x: 240, y: 146, cols: 2, rows: 3, stepX: 26, stepY: 30, scale: 0.4 },
+  wallUnits: { x: 152, y: 114, cols: 4, rows: 1, stepX: 26, stepY: 0, scale: 0.42 },
+  baseUnits: { x: 146, y: 200, cols: 4, rows: 1, stepX: 32, stepY: 0, scale: 0.46 },
+  larder: { x: 266, y: 124, cols: 2, rows: 3, stepX: 26, stepY: 36, scale: 0.42 },
 };
 
 export function capacityOf(id: string): number {
@@ -326,7 +333,15 @@ export const CONTAINER_DROP: Record<string, { x: number; y: number; w: number; h
   tallCupboard: { x: 30, y: 108, w: 94, h: 124 },
   sideboard: { x: 130, y: 182, w: 110, h: 50 },
   tallDrawers: { x: 226, y: 126, w: 74, h: 106 },
+  wallUnits: { x: 136, y: 86, w: 110, h: 58 },
+  baseUnits: { x: 126, y: 168, w: 144, h: 64 },
+  larder: { x: 248, y: 98, w: 72, h: 134 },
 };
+
+/* Fitted kitchen units are painted, not wooden — it is what tells them from the bedroom
+   cupboards at a glance, which all look the same shape from across a room. */
+const KITCHEN = "#e3ded2";
+const STEEL = "#9aa2b8";
 
 const WOOD = "#b5763f";
 const WOOD_DARK = "#8d5a2c";
@@ -689,13 +704,40 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  blocks: () => (
+  /*
+   * A stack that falls over when tapped and builds itself back up a moment later. The same
+   * five blocks throughout, moved by a transition rather than swapped for a second drawing
+   * — that is what makes them fall AND rise, for the price of one set of positions.
+   *
+   * The higher a block starts, the further and later it goes, which is roughly what happens
+   * and reads far better than all five sliding together.
+   */
+  blocks: (c) => (
     <g>
-      <rect x={116} y={210} width={22} height={22} rx={4} fill="#ff4d5e" />
-      <rect x={140} y={210} width={22} height={22} rx={4} fill="#3aa0ff" />
-      <rect x={128} y={188} width={22} height={22} rx={4} fill="#ffd23f" />
-      <rect x={152} y={188} width={22} height={22} rx={4} fill="#5ed64a" />
-      <rect x={140} y={166} width={22} height={22} rx={4} fill="#c77dff" />
+      {([
+        [116, 210, "#ff4d5e", -16, 20, -24, 0],
+        [140, 210, "#3aa0ff", 18, 20, 16, 0.04],
+        [128, 188, "#ffd23f", -34, 42, -42, 0.08],
+        [152, 188, "#5ed64a", 38, 42, 30, 0.12],
+        [140, 166, "#c77dff", 8, 64, 56, 0.16],
+      ] as Array<[number, number, string, number, number, number, number]>).map(
+        ([x, y, fill, dx, dy, spin, wait]) => (
+          <rect
+            key={x + ":" + y}
+            x={x}
+            y={y}
+            width={22}
+            height={22}
+            rx={4}
+            fill={fill}
+            className="block-piece"
+            style={{
+              transform: c.knocked ? "translate(" + dx + "px, " + dy + "px) rotate(" + spin + "deg)" : "none",
+              transitionDelay: wait + "s",
+            }}
+          />
+        )
+      )}
     </g>
   ),
 
@@ -723,13 +765,19 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  balloons: () => (
+  balloons: (c) => (
     <g>
       <path d="M356,150 q6,30 -2,54 M374,146 q-4,32 2,58" stroke="#ffffff" strokeWidth={2} opacity={0.6} fill="none" />
-      <ellipse cx={356} cy={136} rx={16} ry={19} fill="#ff4d7e" />
-      <ellipse cx={378} cy={128} rx={14} ry={17} fill="#3aa0ff" />
-      <ellipse cx={351} cy={130} rx={5} ry={6} fill="#ffffff" opacity={0.45} />
-      <ellipse cx={373} cy={123} rx={4} ry={5} fill="#ffffff" opacity={0.45} />
+      {/* Each balloon swells from the knot at its bottom while it is filling, so they come
+          back by being blown up rather than by simply being there again. */}
+      <g className={c.knocked ? "balloon-fill" : undefined}>
+        <ellipse cx={356} cy={136} rx={16} ry={19} fill="#ff4d7e" />
+        <ellipse cx={351} cy={130} rx={5} ry={6} fill="#ffffff" opacity={0.45} />
+      </g>
+      <g className={c.knocked ? "balloon-fill balloon-fill-late" : undefined}>
+        <ellipse cx={378} cy={128} rx={14} ry={17} fill="#3aa0ff" />
+        <ellipse cx={373} cy={123} rx={4} ry={5} fill="#ffffff" opacity={0.45} />
+      </g>
     </g>
   ),
 
@@ -1201,6 +1249,78 @@ export const FURNITURE: Record<string, FurnitureRender> = {
       {[160, 178, 196].map((y) => (
         <rect key={y} x={356} y={y} width={25} height={4} rx={2} fill={shade(WOOD, 18)} />
       ))}
+    </g>
+  ),
+
+  /* A run of wall cupboards, up where a kitchen keeps its cups. */
+  wallUnits: (c) => (
+    <g>
+      <rect x={136} y={86} width={110} height={58} rx={5} fill={KITCHEN} />
+      <rect x={140} y={90} width={102} height={46} rx={4} fill={shade(KITCHEN, -18)} />
+      {c.open ? (
+        <g>
+          <rect x={144} y={94} width={94} height={40} rx={3} fill={shade(KITCHEN, -54)} />
+          <rect x={146} y={112} width={90} height={3} rx={1.5} fill={shade(KITCHEN, 18)} />
+          <rect x={120} y={88} width={18} height={54} rx={4} fill={shade(KITCHEN, 10)} />
+          <rect x={244} y={88} width={18} height={54} rx={4} fill={shade(KITCHEN, 10)} />
+        </g>
+      ) : (
+        <g>
+          <rect x={144} y={94} width={46} height={40} rx={3} fill={shade(KITCHEN, 8)} />
+          <rect x={194} y={94} width={46} height={40} rx={3} fill={shade(KITCHEN, 8)} />
+          <rect x={181} y={110} width={5} height={14} rx={2.5} fill={STEEL} />
+          <rect x={199} y={110} width={5} height={14} rx={2.5} fill={STEEL} />
+        </g>
+      )}
+      <rect x={134} y={142} width={114} height={5} rx={2.5} fill={shade(KITCHEN, -32)} />
+    </g>
+  ),
+
+  /* Floor cupboards with a worktop over them, which is what the wall ones sit above. */
+  baseUnits: (c) => (
+    <g>
+      <rect x={126} y={176} width={144} height={56} rx={4} fill={KITCHEN} />
+      {/* The worktop. A run of units without one reads as a row of boxes. */}
+      <rect x={122} y={168} width={152} height={12} rx={5} fill={WOOD_DARK} />
+      {c.open ? (
+        <g>
+          <rect x={132} y={184} width={132} height={42} rx={3} fill={shade(KITCHEN, -54)} />
+          <rect x={134} y={204} width={128} height={3} rx={1.5} fill={shade(KITCHEN, 18)} />
+          <rect x={108} y={182} width={18} height={46} rx={4} fill={shade(KITCHEN, 10)} />
+          <rect x={270} y={182} width={18} height={46} rx={4} fill={shade(KITCHEN, 10)} />
+        </g>
+      ) : (
+        <g>
+          <rect x={132} y={184} width={62} height={42} rx={3} fill={shade(KITCHEN, 8)} />
+          <rect x={202} y={184} width={62} height={42} rx={3} fill={shade(KITCHEN, 8)} />
+          <rect x={184} y={202} width={5} height={16} rx={2.5} fill={STEEL} />
+          <rect x={207} y={202} width={5} height={16} rx={2.5} fill={STEEL} />
+        </g>
+      )}
+    </g>
+  ),
+
+  /* A tall larder: the one kitchen cupboard you can get a whole week's shopping into. */
+  larder: (c) => (
+    <g>
+      <rect x={248} y={98} width={72} height={134} rx={5} fill={KITCHEN} />
+      <rect x={252} y={102} width={64} height={122} rx={4} fill={shade(KITCHEN, -18)} />
+      {c.open ? (
+        <g>
+          <rect x={256} y={106} width={56} height={114} rx={3} fill={shade(KITCHEN, -54)} />
+          {[138, 174, 210].map((y) => (
+            <rect key={y} x={258} y={y} width={52} height={3} rx={1.5} fill={shade(KITCHEN, 18)} />
+          ))}
+          <rect x={230} y={104} width={18} height={118} rx={4} fill={shade(KITCHEN, 10)} />
+        </g>
+      ) : (
+        <g>
+          <rect x={256} y={106} width={56} height={114} rx={3} fill={shade(KITCHEN, 8)} />
+          <rect x={302} y={152} width={5} height={22} rx={2.5} fill={STEEL} />
+        </g>
+      )}
+      <rect x={252} y={228} width={12} height={4} rx={2} fill={shade(KITCHEN, -40)} />
+      <rect x={304} y={228} width={12} height={4} rx={2} fill={shade(KITCHEN, -40)} />
     </g>
   ),
 

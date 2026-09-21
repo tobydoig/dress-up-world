@@ -1148,30 +1148,32 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  /* Two beds and a ladder. Only the bottom one can be climbed into — see SEATS. */
+  /*
+   * Two beds and a ladder, and long enough to lie on: a grown-up laid down is about 180
+   * across, and at the 156 this started at her head and feet hung off both ends.
+   */
   bunkBed: () => (
     <g>
-      {hitPad(228, 96, 164, 136)}
-      {/* Posts */}
-      <rect x={232} y={96} width={10} height={136} rx={5} fill={WOOD_DARK} />
-      <rect x={378} y={96} width={10} height={136} rx={5} fill={WOOD_DARK} />
+      {hitPad(200, 96, 200, 136)}
+      <rect x={204} y={96} width={10} height={136} rx={5} fill={WOOD_DARK} />
+      <rect x={386} y={96} width={10} height={136} rx={5} fill={WOOD_DARK} />
       {/* Top bunk */}
-      <rect x={232} y={140} width={156} height={10} rx={5} fill={WOOD} />
-      <rect x={238} y={124} width={144} height={18} rx={7} fill="#7fb6ff" />
-      <rect x={244} y={116} width={38} height={14} rx={6} fill="#fffdfa" />
-      <path d="M236,132 h148" stroke={shade("#7fb6ff", -34)} strokeWidth={2.5} />
-      {/* Guard rail, which is the thing that says "bunk" rather than "two beds" */}
-      <rect x={246} y={104} width={130} height={5} rx={2.5} fill={WOOD} />
+      <rect x={204} y={140} width={192} height={10} rx={5} fill={WOOD} />
+      <rect x={210} y={122} width={180} height={20} rx={8} fill="#7fb6ff" />
+      <rect x={216} y={113} width={42} height={15} rx={7} fill="#fffdfa" />
+      <path d="M208,132 h184" stroke={shade("#7fb6ff", -34)} strokeWidth={2.5} />
+      {/* Guard rail, which is what says "bunk" rather than "two beds" */}
+      <rect x={220} y={104} width={160} height={5} rx={2.5} fill={WOOD} />
       {/* Bottom bunk */}
-      <rect x={232} y={214} width={156} height={10} rx={5} fill={WOOD} />
-      <rect x={238} y={198} width={144} height={18} rx={7} fill="#ff8fc0" />
-      <rect x={244} y={190} width={38} height={14} rx={6} fill="#fffdfa" />
-      <path d="M236,206 h148" stroke={shade("#ff8fc0", -34)} strokeWidth={2.5} />
+      <rect x={204} y={214} width={192} height={10} rx={5} fill={WOOD} />
+      <rect x={210} y={196} width={180} height={20} rx={8} fill="#ff8fc0" />
+      <rect x={216} y={187} width={42} height={15} rx={7} fill="#fffdfa" />
+      <path d="M208,206 h184" stroke={shade("#ff8fc0", -34)} strokeWidth={2.5} />
       {/* Ladder */}
-      <rect x={352} y={150} width={5} height={66} rx={2.5} fill={shade(WOOD, 18)} />
-      <rect x={372} y={150} width={5} height={66} rx={2.5} fill={shade(WOOD, 18)} />
+      <rect x={356} y={150} width={5} height={66} rx={2.5} fill={shade(WOOD, 18)} />
+      <rect x={376} y={150} width={5} height={66} rx={2.5} fill={shade(WOOD, 18)} />
       {[160, 178, 196].map((y) => (
-        <rect key={y} x={352} y={y} width={25} height={4} rx={2} fill={shade(WOOD, 18)} />
+        <rect key={y} x={356} y={y} width={25} height={4} rx={2} fill={shade(WOOD, 18)} />
       ))}
     </g>
   ),

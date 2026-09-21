@@ -162,7 +162,13 @@ export function DesignMode({
   onNew: () => void;
 }) {
   const [activeId, setActiveId] = useState<CategoryId>("top");
-  const [showCharacters, setShowCharacters] = useState(false);
+  /*
+   * Who you are dressing is chosen exactly the way a hat is: a tab at the far left of the
+   * same strip, then a face in the same row of pictures. It used to be a button below the
+   * drawer that unfolded a second list, which made picking a character the one thing in
+   * here that worked differently from everything else.
+   */
+  const [showWho, setShowWho] = useState(false);
   const active = CATEGORIES.find((c) => c.id === activeId)!;
   const selectedItem = currentItem(look, activeId);
   const selectedColour = currentColour(look, activeId);
@@ -229,13 +235,27 @@ export function DesignMode({
         </div>
 
         <div className="tabs" role="tablist">
+          {/* First, because it is the thing the rest of the drawer is about. */}
+          <button
+            role="tab"
+            aria-selected={showWho}
+            className={"tab" + (showWho ? " is-active" : "")}
+            onClick={() => {
+              setShowWho(true);
+              playTap();
+            }}
+          >
+            <span className="tab-icon">👥</span>
+            <span className="tab-label">Who</span>
+          </button>
           {CATEGORIES.map((c) => (
             <button
               key={c.id}
               role="tab"
-              aria-selected={c.id === activeId}
-              className={"tab" + (c.id === activeId ? " is-active" : "")}
+              aria-selected={!showWho && c.id === activeId}
+              className={"tab" + (!showWho && c.id === activeId ? " is-active" : "")}
               onClick={() => {
+                setShowWho(false);
                 setActiveId(c.id);
                 playTap();
               }}
@@ -246,116 +266,113 @@ export function DesignMode({
           ))}
         </div>
 
-        {activeId === "bottom" && dressCoversLegs && (
-          <p className="hint">Your dress covers your legs — pick a different outfit to show these.</p>
-        )}
+        {/* One or the other fills the same space: the faces, or the clothes. */}
+        {showWho ? (
+          <>
+            <div className="items">
+              <button
+                className="item"
+                onClick={() => {
+                  onNew();
+                  playPop();
+                }}
+              >
+                <span className="item-none">＋</span>
+                <span className="item-name">New one</span>
+              </button>
+              {characters.length === 0 && (
+                <p className="hint">Nobody saved yet — tap Play and this one is kept.</p>
+              )}
+              {characters.map((c) => (
+                <div key={c.id} className={"item item-saved" + (c.id === editingId ? " is-active" : "")}>
+                  <button
+                    className="item-pick"
+                    onClick={() => {
+                      onSelect(c.id);
+                      playPop();
+                    }}
+                  >
+                    <span className="item-art">
+                      <Avatar look={c.look} uid={"saved-" + c.id} animate={false} />
+                    </span>
+                    <span className="item-name">{c.name}</span>
+                  </button>
+                  <button
+                    className="item-delete"
+                    aria-label={"Delete " + c.name}
+                    onClick={() => {
+                      onDelete(c.id);
+                      playTap();
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              </div>
 
-        <div className="items">
-          {active.allowNone && (
-            <button
-              className={"item" + (selectedItem === null ? " is-active" : "")}
-              onClick={() => {
-                onChange(applyItem(look, activeId, null));
-                playPop();
-              }}
-            >
-              <span className="item-none">🚫</span>
-              <span className="item-name">None</span>
-            </button>
-          )}
-
-          {active.items.map((item) => (
-            <button
-              key={item.id}
-              className={"item" + (selectedItem === item.id ? " is-active" : "")}
-              onClick={() => {
-                onChange(applyItem(look, activeId, item.id));
-                playPop();
-              }}
-            >
-              <span className="item-art">
-                <Avatar
-                  look={applyItem(look, activeId, item.id)}
-                  uid={"thumb-" + activeId + "-" + item.id}
-                  animate={false}
-                  crop={CROPS[activeId]}
-                />
-              </span>
-              <span className="item-name">{item.name}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="swatches">
-          {active.palette?.map((hex) => (
-            <button
-              key={hex}
-              aria-label={"Colour " + hex}
-              className={"swatch" + (selectedColour === hex ? " is-active" : "")}
-              style={{ background: hex }}
-              onClick={() => {
-                onChange(applyColour(look, activeId, hex));
-                playSwatch();
-              }}
-            />
-          ))}
-        </div>
-
-        {showCharacters && (
-          <div className="items">
-            <button
-              className="item"
-              onClick={() => {
-                onNew();
-                playPop();
-              }}
-            >
-              <span className="item-none">＋</span>
-              <span className="item-name">New one</span>
-            </button>
-            {characters.length === 0 && (
-              <p className="hint">Nobody saved yet — tap Play and this one is kept.</p>
+              {/* Empty, but present: the swatch row is reserved on every tab so the drawer
+                  keeps one height and the character doesn't change size as you flick along. */}
+              <div className="swatches" />
+            </>
+          ) : (
+            <>
+            {activeId === "bottom" && dressCoversLegs && (
+              <p className="hint">Your dress covers your legs — pick a different outfit to show these.</p>
             )}
-            {characters.map((c) => (
-              <div key={c.id} className={"item item-saved" + (c.id === editingId ? " is-active" : "")}>
+
+            <div className="items">
+              {active.allowNone && (
                 <button
-                  className="item-pick"
+                  className={"item" + (selectedItem === null ? " is-active" : "")}
                   onClick={() => {
-                    onSelect(c.id);
+                    onChange(applyItem(look, activeId, null));
+                    playPop();
+                  }}
+                >
+                  <span className="item-none">🚫</span>
+                  <span className="item-name">None</span>
+                </button>
+              )}
+
+              {active.items.map((item) => (
+                <button
+                  key={item.id}
+                  className={"item" + (selectedItem === item.id ? " is-active" : "")}
+                  onClick={() => {
+                    onChange(applyItem(look, activeId, item.id));
                     playPop();
                   }}
                 >
                   <span className="item-art">
-                    <Avatar look={c.look} uid={"saved-" + c.id} animate={false} />
+                    <Avatar
+                      look={applyItem(look, activeId, item.id)}
+                      uid={"thumb-" + activeId + "-" + item.id}
+                      animate={false}
+                      crop={CROPS[activeId]}
+                    />
                   </span>
-                  <span className="item-name">{c.name}</span>
+                  <span className="item-name">{item.name}</span>
                 </button>
-                <button
-                  className="item-delete"
-                  aria-label={"Delete " + c.name}
-                  onClick={() => {
-                    onDelete(c.id);
-                    playTap();
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
+              ))}
+          </div>
+
+          <div className="swatches">
+            {active.palette?.map((hex) => (
+              <button
+                key={hex}
+                aria-label={"Colour " + hex}
+                className={"swatch" + (selectedColour === hex ? " is-active" : "")}
+                style={{ background: hex }}
+                onClick={() => {
+                  onChange(applyColour(look, activeId, hex));
+                  playSwatch();
+                }}
+              />
             ))}
           </div>
+          </>
         )}
-
-        <div className="actions">
-          <button
-            className="btn-secondary"
-            onClick={() => {
-              setShowCharacters((v) => !v);
-              playTap();
-            }}
-          >
-            {showCharacters ? "▾ Hide" : "👥 Characters (" + characters.length + ")"}
-          </button>
-        </div>
       </div>
     </div>
   );

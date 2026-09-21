@@ -83,7 +83,22 @@ export interface Placement {
    * it, so a baby has exactly one answer to "where are you" however many arms are about.
    */
   heldBy: string | null;
+  /**
+   * A baby only: what it is crying for, or null when it is content. Kept beside where the
+   * baby is rather than on the character, because it is a thing that is true of it right
+   * now and not a thing it is — and a baby left crying in the kitchen is still crying.
+   */
+  wants: BabyWant | null;
 }
+
+/**
+ * What settles a crying baby. A cuddle, something to eat, or its dummy — tried in that
+ * order, because picking it up is what anybody does first and it is how she finds out
+ * which of the other two it wanted.
+ */
+export type BabyWant = "cuddle" | "food" | "dummy";
+
+export const BABY_WANTS: BabyWant[] = ["cuddle", "food", "dummy"];
 
 export interface RoomState {
   items: PlacedFurniture[];
@@ -133,6 +148,7 @@ export function castHome(index: number, count: number): Placement {
     seat: null,
     seatSpot: 0,
     heldBy: null,
+    wants: null,
   };
 }
 
@@ -272,6 +288,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
       seat?: unknown;
       seatSpot?: unknown;
       heldBy?: unknown;
+      wants?: unknown;
     }): Placement => {
       const pose: AvatarPose = from.pose === "sit" || from.pose === "lie" ? from.pose : "stand";
       return {
@@ -282,6 +299,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
         seat: pose !== "stand" && onFloor(from.seat) ? (from.seat as string) : null,
         seatSpot: Math.max(0, Math.round(num(from.seatSpot, 0))),
         heldBy: typeof from.heldBy === "string" ? from.heldBy : null,
+        wants: BABY_WANTS.includes(from.wants as BabyWant) ? (from.wants as BabyWant) : null,
       };
     };
 

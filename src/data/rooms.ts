@@ -168,6 +168,8 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
       { id: "plushieBunny", name: "Bunny" },
       { id: "plushieDino", name: "Dino" },
       { id: "plushieDuck", name: "Duck" },
+      { id: "cot", name: "Cot" },
+      { id: "pram", name: "Pram" },
     ],
   },
   {
@@ -189,6 +191,7 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
       { id: "fruitStall", name: "Fruit stall" },
       { id: "vegStall", name: "Veg stall" },
       { id: "bakeryStall", name: "Bakery" },
+      { id: "babyStall", name: "Nursery" },
       { id: "dairyStall", name: "Dairy" },
     ],
   },

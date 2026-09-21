@@ -15,8 +15,12 @@ import type { AvatarLook } from "../data/wardrobe";
  * are the same ones she knows from dressing everybody else.
  */
 
-/** The baby's head, in the shared canvas. The face below is mapped onto it. */
-const HEAD = { cx: 100, cy: 296, r: 47 };
+/**
+ * The baby's head, in the shared canvas. The face below is mapped onto it — and the room
+ * needs it too, to know where to aim a bottle.
+ */
+export const BABY_HEAD = { cx: 100, cy: 296, r: 47 };
+const HEAD = BABY_HEAD;
 
 /** Where the adult face is authored, so it can be moved and scaled onto the head above. */
 const FACE_FROM = { cx: 100, cy: 88, r: 54 };
@@ -173,13 +177,16 @@ export function BabyLayers({
   look,
   animate = true,
   held = false,
+  crying = false,
 }: {
   look: AvatarLook;
   animate?: boolean;
   /** In somebody's arms: it lies still and is rocked by whoever is holding it. */
   held?: boolean;
+  /** Wants something. Squeezed eyes, an open mouth and tears, and no fidgeting. */
+  crying?: boolean;
 }): ReactElement {
-  const idle = useBabyIdle(animate, held);
+  const idle = useBabyIdle(animate, held || crying);
   const suit = look.topColour;
   // An outfit picked for a grown-up means nothing here, so anything unrecognised is a
   // babygro rather than nothing at all.
@@ -188,7 +195,8 @@ export function BabyLayers({
   const mouth = MOUTH_STYLES[look.mouthId] ?? MOUTH_STYLES.smile;
 
   return (
-    <g className={idle ? "bb-idle bb-idle-" + idle : undefined}>
+    <g className={crying ? "bb-crying" : idle ? "bb-idle bb-idle-" + idle : undefined}>
+      {crying && pin()}
       {idle && pin()}
 
       {/* Legs and body together: on a baby they are one garment as often as not. */}
@@ -243,12 +251,34 @@ export function BabyLayers({
           }
         >
           {look.blushId && BLUSH_STYLES[look.blushId] && BLUSH_STYLES[look.blushId]({ colour: look.blushColour })}
-          <g className={animate ? "av-blink" : undefined}>
-            {eyes({ iris: look.irisColour, skin: look.skin })}
-          </g>
-          {look.noseId && NOSE_STYLES[look.noseId] &&
-            NOSE_STYLES[look.noseId]({ iris: look.irisColour, skin: look.skin })}
-          {mouth()}
+          {crying ? (
+            /* Its own face while it is upset. Whatever eyes and mouth she chose are still
+               its face; they simply aren't what a crying baby's look like. */
+            <g>
+              <path
+                d="M67,90 q11,-9 22,0 M111,90 q11,-9 22,0"
+                stroke="#3c3350"
+                strokeWidth={4.6}
+                strokeLinecap="round"
+                fill="none"
+              />
+              <ellipse cx={100} cy={120} rx={13} ry={15} fill="#8f2d46" />
+              <ellipse cx={100} cy={128} rx={7} ry={5} fill="#ff7d9c" />
+              <g className="bb-tear">
+                <path d="M74,98 q5,9 0,13 q-5,-4 0,-13 z" fill="#7fd4ff" />
+                <path d="M126,98 q5,9 0,13 q-5,-4 0,-13 z" fill="#7fd4ff" />
+              </g>
+            </g>
+          ) : (
+            <g>
+              <g className={animate ? "av-blink" : undefined}>
+                {eyes({ iris: look.irisColour, skin: look.skin })}
+              </g>
+              {look.noseId && NOSE_STYLES[look.noseId] &&
+                NOSE_STYLES[look.noseId]({ iris: look.irisColour, skin: look.skin })}
+              {mouth()}
+            </g>
+          )}
         </g>
       </g>
     </g>

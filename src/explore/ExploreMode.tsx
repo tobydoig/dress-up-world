@@ -10,7 +10,7 @@ import {
   type ReactElement,
 } from "react";
 import { Avatar, AvatarLayers } from "../avatar/Avatar";
-import { BabyLayers } from "../avatar/Baby";
+import { BABY_HEAD, BabyLayers } from "../avatar/Baby";
 import { HEAD } from "../avatar/bodyGeometry";
 import {
   CATALOGUE_CTX,
@@ -52,9 +52,11 @@ import {
 } from "../data/things";
 import type { AvatarLook } from "../data/wardrobe";
 import {
+  BABY_WANTS,
   BASKET_LIMIT,
   MAX_CAST,
   type AvatarPose,
+  type BabyWant,
   type CharacterKind,
   type Placement,
   type PlacedFurniture,
@@ -129,12 +131,20 @@ interface Spot {
   x: number;
   y: number;
   pose: AvatarPose;
+  /** A cot is a cot. A grown-up folded into one is funny for a second and wrong after that. */
+  babyOnly?: boolean;
 }
 
 const SEATS: Record<string, Spot[]> = {
   chairLeft: [{ zones: [{ x: 124, y: 328 }], x: 124, y: 324, pose: "sit" }],
   chairRight: [{ zones: [{ x: 288, y: 328 }], x: 288, y: 324, pose: "sit" }],
   bed: [{ zones: [{ x: 286, y: 330 }, { x: 330, y: 250 }], x: 369, y: 220, pose: "lie" }],
+  cot: [
+    { zones: [{ x: 90, y: 330 }, { x: 90, y: 250 }], x: 140, y: 228, pose: "lie", babyOnly: true },
+  ],
+  pram: [
+    { zones: [{ x: 292, y: 330 }, { x: 292, y: 240 }], x: 348, y: 216, pose: "lie", babyOnly: true },
+  ],
   /*
    * Both zones are at floor level, because a character cannot be dragged any higher than
    * that — so the top bunk is reached by dropping somebody at the foot of the LADDER, and
@@ -210,6 +220,13 @@ const FILL_MS = 900;
 
 /** How long the blocks lie where they fell before building themselves back up. */
 const TOPPLE_MS = 2200;
+
+/**
+ * How long a contented baby stays contented. Long enough not to nag, short enough that a
+ * child who has put one down comes back to find it wanting her.
+ */
+const CRY_AFTER_MS = 14000;
+const CRY_SPREAD_MS = 12000;
 
 /** How long "Yum!" hangs in the air after something is eaten. */
 const REACTION_MS = 1100;
@@ -360,6 +377,9 @@ const CARRY = {
    *  aiming at a person, not at a pair of arms. */
   snap: 92,
   /** Where it rides, in the carrier's own coordinates — chest height, a little to one side. */
+  dx: 40,
+  dy: -202,
+  scale: 0.72,
   transform: "translate(140 178) scale(0.72) translate(-100 -380)",
 };
 
@@ -392,12 +412,27 @@ function characterTransform(x: number, y: number, pose: AvatarPose): string {
  * measured off the page, so it costs nothing to ask for on every pointer move. Lying down
  * rotates the whole figure a quarter turn, which puts the head out to the side.
  */
-function faceAt(place: Placement): { x: number; y: number; r: number } {
-  const reach = AVATAR_SCALE * (HEAD.cy - 380);
-  const r = AVATAR_SCALE * HEAD.r;
-  return place.pose === "lie"
-    ? { x: place.x + reach, y: place.y, r }
-    : { x: place.x, y: place.y + reach, r };
+/**
+ * Where somebody's face is, in room coordinates. A baby's head sits somewhere quite
+ * different in the shared canvas from a grown-up's, and a carried one isn't where it was
+ * put down at all — it is up against whoever has it, and smaller. Getting this wrong aims
+ * a bottle a hundred units over the baby's head, which is exactly what it was doing.
+ */
+function faceAt(
+  place: Placement,
+  kind: CharacterKind = "child",
+  carrier?: { x: number; y: number }
+): { x: number; y: number; r: number } {
+  const head = kind === "baby" ? BABY_HEAD : HEAD;
+  const scale = AVATAR_SCALE * (carrier ? CARRY.scale : 1);
+  const at = carrier
+    ? { x: carrier.x + CARRY.dx * AVATAR_SCALE, y: carrier.y + CARRY.dy * AVATAR_SCALE }
+    : place;
+  const reach = scale * (head.cy - 380);
+  const r = scale * head.r;
+  return place.pose === "lie" && !carrier
+    ? { x: at.x + reach, y: at.y, r }
+    : { x: at.x, y: at.y + reach, r };
 }
 
 /**
@@ -531,6 +566,7 @@ const Character = memo(function Character({
   x,
   y,
   rocking,
+  crying,
   carried,
   pose,
   phase,
@@ -548,6 +584,8 @@ const Character = memo(function Character({
   pose: AvatarPose;
   /** Carrying a baby: sway on the spot, and leave the ordinary fidgets alone. */
   rocking: boolean;
+  /** This baby wants something. */
+  crying: boolean;
   /** The baby in their arms, drawn inside them so it moves with everything they do. */
   carried: ReactElement | null;
   /** How far into each of the two idle loops this one starts. See `phaseOf`. */
@@ -575,7 +613,7 @@ const Character = memo(function Character({
           there throws the whole character back to the corner of the room. */}
       <g className={rocking ? "av-rocking" : undefined}>
         {kind === "baby" ? (
-          <BabyLayers look={look} />
+          <BabyLayers look={look} crying={crying} />
         ) : (
           <AvatarLayers
             look={look}
@@ -789,6 +827,7 @@ export function ExploreMode({
   onUpdateFurniture,
   onRemoveFurniture,
   onMoveAvatar,
+  onBabyWants,
   onTidyUp,
   onCycleTime,
   onBuy,
@@ -822,6 +861,7 @@ export function ExploreMode({
     y: number,
     settle?: { pose: AvatarPose; seat: string | null; seatSpot?: number; heldBy?: string | null }
   ) => void;
+  onBabyWants: (id: string, wants: BabyWant | null) => void;
   onTidyUp: () => void;
   onCycleTime: () => void;
   onBuy: (thingId: string) => void;
@@ -1503,7 +1543,22 @@ export function ExploreMode({
           putDown(baby.id);
         }}
       >
-        <BabyLayers look={baby.look} held />
+        <BabyLayers look={baby.look} held crying={!!baby.place.wants} />
+        {/*
+         * What it wants, but only once it is in somebody's arms. Picking a crying baby up
+         * is what anybody does first, and being told what is wrong is the reward for
+         * having done it — so the first thing she learns is to pick the baby up.
+         */}
+        {baby.place.wants && baby.place.wants !== "cuddle" && (
+          <g transform="translate(168 236)">
+            <circle cx={0} cy={0} r={44} fill="#fffdfa" opacity={0.95} />
+            <circle cx={-36} cy={38} r={11} fill="#fffdfa" opacity={0.95} />
+            <circle cx={-52} cy={56} r={6} fill="#fffdfa" opacity={0.95} />
+            <g transform="scale(2)">
+              {THINGS[baby.place.wants === "dummy" ? "dummy" : "bottle"].art()}
+            </g>
+          </g>
+        )}
       </g>
     );
   }
@@ -1550,19 +1605,64 @@ export function ExploreMode({
         playPop();
         return;
       }
+      /*
+       * A cot, a pram, or a pair of arms — whichever is nearest to where she let go.
+       * Checking the cots first instead meant a pram standing between her and the person
+       * she was aiming at quietly won, which is not what anybody would call aiming.
+       */
+      let bestGap = CARRY.snap;
       let arms: string | null = null;
-      let nearest = CARRY.snap;
+      let bed: { id: string; spot: number; x: number; y: number; pose: AvatarPose } | null = null;
+
+      for (const item of current.items) {
+        for (const spot of seatSpots(item.id)) {
+          if (!SEATS[item.id]?.[spot]?.babyOnly) continue;
+          if (riderOf(item.id, spot) !== null) continue;
+          const place = seatPlace(item, spot);
+          if (!place) continue;
+          for (const zone of seatZones(item, spot)) {
+            const gap = Math.hypot(x - zone.x, y - zone.y);
+            if (gap < bestGap) {
+              bestGap = gap;
+              bed = { id: item.id, spot, ...place };
+              arms = null;
+            }
+          }
+        }
+      }
+
       for (const member of castRef.current) {
         if (member.kind === "baby" || babyOf(member.id)) continue;
         const gap = Math.hypot(x - member.place.x, y - (member.place.y - 60));
-        if (gap < nearest) {
-          nearest = gap;
+        if (gap < bestGap) {
+          bestGap = gap;
           arms = member.id;
+          bed = null;
         }
       }
+
+      if (bed) {
+        onMoveAvatar(who, bed.x, bed.y, {
+          pose: bed.pose,
+          seat: bed.id,
+          seatSpot: bed.spot,
+          heldBy: null,
+        });
+        playSparkle();
+        return;
+      }
+
       if (arms) {
         onMoveAvatar(who, x, y, { pose: "stand", seat: null, heldBy: arms });
-        playSparkle();
+        // A cuddle was all it was after. If it wanted something else it keeps crying in
+        // your arms, which is how she finds out which of the other two it was.
+        if (me.place.wants === "cuddle") {
+          onBabyWants(who, null);
+          setReaction("There, there.");
+          playChime();
+        } else {
+          playSparkle();
+        }
       }
       return;
     }
@@ -1582,6 +1682,9 @@ export function ExploreMode({
       for (const spot of seatSpots(item.id)) {
         const place = seatPlace(item, spot);
         if (!place) continue;
+        // Babies never get here — they have their own branch above, which is also where
+        // the cots and prams are handled.
+        if (SEATS[item.id]?.[spot]?.babyOnly) continue;
         // One to a spot. Two characters in the same one is a single blurred character, and
         // dragging the furniture afterwards could only ever take one of them with it.
         const taken = riderOf(item.id, spot);
@@ -1646,7 +1749,10 @@ export function ExploreMode({
     // With more than one of them out, the food goes to whichever face it is closest to.
     let mouth: { id: string; distance: number } | null = null;
     for (const member of castRef.current) {
-      const face = faceAt(member.place);
+      const carrier = member.place.heldBy
+        ? castRef.current.find((m) => m.id === member.place.heldBy)?.place
+        : undefined;
+      const face = faceAt(member.place, member.kind, carrier);
       const distance = Math.hypot(at.x - face.x, at.y - face.y);
       // Generously wide: she is aiming at a face, not at a pair of lips.
       if (distance <= face.r * 1.5 && (!mouth || distance < mouth.distance)) {
@@ -1770,6 +1876,28 @@ export function ExploreMode({
     const thing = thingId ? THINGS[thingId] : undefined;
     if (!thing) return;
 
+    const member = castRef.current.find((m) => m.id === who);
+    if (member?.kind === "baby") {
+      const wanted = member.place.wants;
+      const settles =
+        (wanted === "food" && thingId !== "dummy") || (wanted === "dummy" && thingId === "dummy");
+      if (settles) {
+        onBabyWants(who, null);
+        setReaction(thingId === "dummy" ? "Shhh." : "All gone!");
+        playChime();
+        setChewingId(who);
+        if (from.kind === "basket") onEat(from.index);
+        else onEatFrom(from.id, from.index);
+        return;
+      }
+      // Offered the wrong thing, or offered anything at all when it is perfectly happy.
+      // Nothing is taken away for guessing: this is a puzzle, not a tax.
+      setReaction(wanted ? "Still crying…" : "Not hungry.");
+      playYuck();
+      return;
+    }
+
+    // A dummy is not food, whoever is offered it.
     if (thing.taste === "yuck") {
       // Refused rather than eaten — it stays where it was.
       setReaction("Yuck! Cook it first");
@@ -1841,6 +1969,25 @@ export function ExploreMode({
     const timer = setTimeout(() => setBalloons(balloons === "popped" ? "filling" : "whole"), wait);
     return () => clearTimeout(timer);
   }, [balloons]);
+
+  /*
+   * Babies get upset now and again. Only in the room she is in: a baby that worked itself
+   * into a state in an empty kitchen would be a thing she is losing at without being there,
+   * and she would come back to a problem rather than to a baby.
+   *
+   * What it wants is decided the moment it starts, and it does not change — casting about
+   * for something that keeps moving is not a lesson, it is a slot machine.
+   */
+  useEffect(() => {
+    const babies = cast.filter((m) => m.kind === "baby" && !m.place.wants);
+    if (babies.length === 0) return;
+    const timer = setTimeout(() => {
+      const who = babies[Math.floor(Math.random() * babies.length)];
+      onBabyWants(who.id, BABY_WANTS[Math.floor(Math.random() * BABY_WANTS.length)]);
+      playYuck();
+    }, CRY_AFTER_MS + Math.random() * CRY_SPREAD_MS);
+    return () => clearTimeout(timer);
+  });
 
   // And the blocks build themselves back up.
   useEffect(() => {
@@ -2058,6 +2205,7 @@ export function ExploreMode({
                   x={member.place.x}
                   y={member.place.y}
                   rocking={!!babyInArms(member.id)}
+                  crying={!!member.place.wants}
                   carried={carriedNode(member.id)}
                   pose={member.place.pose}
                   phase={phaseOf(index, cast.length)}

@@ -2,11 +2,22 @@ import { useState } from "react";
 import { Avatar } from "../avatar/Avatar";
 import { BabyLayers } from "../avatar/Baby";
 import { COVERS_LEGS } from "../avatar/clothingParts";
-import { CATEGORIES, type AvatarLook, type CategoryId } from "../data/wardrobe";
+import { BABY_TOPS, CATEGORIES, type AvatarLook, type CategoryId } from "../data/wardrobe";
 import { NAME_MAX, type CharacterKind, type SavedCharacter } from "../lib/storage";
 import { playPop, playSparkle, playSwatch, playTap } from "../lib/sound";
 
 /** Each tab previews the part of the body it changes, so thumbnails aren't tiny full bodies. */
+/**
+ * What to frame on a baby for each sort of thing. The head is most of a baby, so a crop that
+ * works for a grown-up's face leaves the body out of shot entirely and vice versa.
+ */
+const BABY_CROPS: Partial<Record<CategoryId, string>> = {
+  top: "44 328 112 64",
+  skin: "50 246 100 100",
+};
+
+const BABY_FACE_CROP = "58 252 84 84";
+
 /** The only tabs that mean anything for a baby. */
 const BABY_TABS = new Set<CategoryId>(["top", "eyes", "nose", "mouth", "blush", "skin"]);
 
@@ -183,7 +194,10 @@ export function DesignMode({
    * here that worked differently from everything else.
    */
   const [showWho, setShowWho] = useState(false);
-  const active = CATEGORIES.find((c) => c.id === activeId)!;
+  const found = CATEGORIES.find((c) => c.id === activeId)!;
+  // A baby's outfit list is its own; everything else it can have is shared.
+  const active =
+    editingKind === "baby" && activeId === "top" ? { ...found, items: BABY_TOPS } : found;
   const selectedItem = currentItem(look, activeId);
   const selectedColour = currentColour(look, activeId);
   const dressCoversLegs = look.topId !== null && COVERS_LEGS.has(look.topId);
@@ -381,12 +395,18 @@ export function DesignMode({
                   }}
                 >
                   <span className="item-art">
-                    <Avatar
-                      look={applyItem(look, activeId, item.id)}
-                      uid={"thumb-" + activeId + "-" + item.id}
-                      animate={false}
-                      crop={CROPS[activeId]}
-                    />
+                    {editingKind === "baby" ? (
+                      <svg viewBox={BABY_CROPS[activeId] ?? BABY_FACE_CROP} className="thing-svg">
+                        <BabyLayers look={applyItem(look, activeId, item.id)} animate={false} />
+                      </svg>
+                    ) : (
+                      <Avatar
+                        look={applyItem(look, activeId, item.id)}
+                        uid={"thumb-" + activeId + "-" + item.id}
+                        animate={false}
+                        crop={CROPS[activeId]}
+                      />
+                    )}
                   </span>
                   <span className="item-name">{item.name}</span>
                 </button>

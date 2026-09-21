@@ -270,13 +270,20 @@ export const MOUTH_STYLES: Record<string, () => ReactElement> = {
         }
         fill={MOUTH_DARK}
       />
+      {/* A straight band of teeth with the gaps drawn in. The zigzag this replaces was
+          meant to read as gritted and read as a cartoon saw. */}
       <path
-        d={"M" + (MOUTH.cx - 13) + "," + (MOUTH.cy + 2) + " l4.5,4 l4.5,-4 l4.5,4 l4.5,-4 l4.5,4"}
-        stroke="#fffdfa"
-        strokeWidth={2.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
+        d={"M" + (MOUTH.cx - 14) + "," + (MOUTH.cy + 1) + " h28 v5 h-28 z"}
+        fill="#fffdfa"
+      />
+      <path
+        d={
+          "M" + (MOUTH.cx - 7) + "," + (MOUTH.cy + 1) + " v5 " +
+          "M" + MOUTH.cx + "," + (MOUTH.cy + 1) + " v5 " +
+          "M" + (MOUTH.cx + 7) + "," + (MOUTH.cy + 1) + " v5"
+        }
+        stroke={MOUTH_DARK}
+        strokeWidth={1.6}
       />
     </g>
   ),

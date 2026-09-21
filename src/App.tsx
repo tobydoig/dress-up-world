@@ -3,7 +3,7 @@ import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
 import { capacityOf } from "./explore/furniture";
 import { CROPS, isThirsty } from "./data/growing";
-import { DEFAULT_LOOK, randomLook, type AvatarLook } from "./data/wardrobe";
+import { DEFAULT_LOOK, randomBabyLook, randomLook, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
 import {
   BASKET_LIMIT,
@@ -108,9 +108,8 @@ export function App() {
         ],
         activeId: id,
       };
-      // Somebody just made is somebody she wants to see, so they are waiting in the room
-      // she is about to be dropped back into.
-      return bringTo(made, prev.lastRoom, id);
+      // Same rule as above: only the very first one is put out for her.
+      return prev.characters.length === 0 ? bringTo(made, prev.lastRoom, id) : made;
     });
     setMode("explore");
   }
@@ -131,9 +130,15 @@ export function App() {
         characters: [...prev.characters, { id, kind, name: given, look: DEFAULT_LOOK }],
         activeId: id,
       };
-      // Making someone is the one act that does place them: she is about to press Play and
-      // should find them standing there, not have to go and fetch what she just made.
-      return bringTo(made, prev.lastRoom, id);
+      /*
+       * Deliberately NOT placed in a room. Who is in a room is chosen with the avatar
+       * button, and making somebody shouldn't quietly decide that for her.
+       *
+       * The single exception is the very first character in a brand-new game: without it
+       * she makes someone, presses Play, and arrives in an empty house with nothing to
+       * suggest what to do next.
+       */
+      return prev.characters.length === 0 ? bringTo(made, prev.lastRoom, id) : made;
     });
     setEditingId(id);
     setLook(DEFAULT_LOOK);
@@ -569,7 +574,7 @@ export function App() {
             className="float-btn"
             aria-label="Surprise me — dress this character at random"
             onClick={() => {
-              setLook(randomLook());
+              changeLook(editingKind === "baby" ? randomBabyLook(look) : randomLook());
               playPop();
             }}
           >

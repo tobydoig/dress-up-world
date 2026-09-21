@@ -23,6 +23,106 @@ const FACE_FROM = { cx: 100, cy: 88, r: 54 };
 
 const FACE_SCALE = HEAD.r / FACE_FROM.r;
 
+/**
+ * What a baby wears. Its own list rather than the grown-up one — nobody puts a baby in a
+ * suit jacket, and the shapes are different anyway: one piece with poppers, or a romper
+ * with the arms and legs out.
+ *
+ * Each returns the body and legs together, because on a baby they are one garment as often
+ * as not, and the legs have to know whether they are covered.
+ */
+export interface BabySuit {
+  body: (colour: string, skin: string) => ReactElement;
+  /** Bare arms and legs, for the ones that don't reach. */
+  bareArms?: boolean;
+  bareLegs?: boolean;
+}
+
+function legs(colour: string, toes: string): ReactElement {
+  return (
+    <g>
+      <ellipse cx={78} cy={374} rx={19} ry={12} fill={colour} />
+      <ellipse cx={122} cy={374} rx={19} ry={12} fill={colour} />
+      <ellipse cx={64} cy={376} rx={9} ry={7} fill={toes} />
+      <ellipse cx={136} cy={376} rx={9} ry={7} fill={toes} />
+    </g>
+  );
+}
+
+const TUMMY = "M68,344 q32,-12 64,0 l6,26 q-38,12 -76,0 z";
+
+export const BABY_SUITS: Record<string, BabySuit> = {
+  babygro: {
+    body: (c) => (
+      <g>
+        {legs(c, shade(c, -28))}
+        <path d={TUMMY} fill={c} />
+        <path d="M72,352 q28,8 56,0" stroke={shade(c, -22)} strokeWidth={2.4} fill="none" />
+        {/* Poppers along the bottom, which is the detail that says babygro. */}
+        {[84, 100, 116].map((x) => (
+          <circle key={x} cx={x} cy={368} r={2.4} fill={shade(c, 40)} />
+        ))}
+      </g>
+    ),
+  },
+
+  romper: {
+    bareArms: true,
+    bareLegs: true,
+    body: (c, skin) => (
+      <g>
+        {legs(skin, shade(skin, -24))}
+        <path d={TUMMY} fill={c} />
+        {/* Short legs cut off above the knee, so the bare ones below read as bare. */}
+        <path d="M70,360 q30,10 60,0 l3,10 q-33,10 -66,0 z" fill={shade(c, -16)} />
+      </g>
+    ),
+  },
+
+  sleepsuit: {
+    body: (c) => (
+      <g>
+        {legs(c, shade(c, 30))}
+        <path d={TUMMY} fill={c} />
+        {/* Stars, because a sleepsuit with nothing on it is just a plain babygro. */}
+        {([[84, 352], [104, 358], [118, 348]] as Array<[number, number]>).map(([x, y]) => (
+          <path
+            key={x}
+            d={"M" + x + "," + (y - 4) + " l1.4,3 l3.2,0.3 l-2.4,2.2 l0.8,3.1 l-3,-1.7 l-3,1.7 l0.8,-3.1 l-2.4,-2.2 l3.2,-0.3 z"}
+            fill={shade(c, 52)}
+          />
+        ))}
+      </g>
+    ),
+  },
+
+  dungarees: {
+    bareArms: true,
+    body: (c, skin) => (
+      <g>
+        {legs(c, shade(skin, -24))}
+        <path d={TUMMY} fill="#fffdfa" />
+        <path d="M74,352 q26,10 52,0 l5,18 q-31,10 -62,0 z" fill={c} />
+        <path d="M84,340 l4,14 M116,340 l-4,14" stroke={c} strokeWidth={6} strokeLinecap="round" />
+        <circle cx={88} cy={354} r={2.6} fill={shade(c, 44)} />
+        <circle cx={112} cy={354} r={2.6} fill={shade(c, 44)} />
+      </g>
+    ),
+  },
+
+  sunDress: {
+    bareArms: true,
+    bareLegs: true,
+    body: (c, skin) => (
+      <g>
+        {legs(skin, shade(skin, -24))}
+        <path d="M70,342 q30,-10 60,0 l10,30 q-40,12 -80,0 z" fill={c} />
+        <path d="M74,356 q26,8 52,0" stroke={shade(c, 30)} strokeWidth={2.6} fill="none" />
+      </g>
+    ),
+  },
+};
+
 /** Fidgets a baby does, and how long each runs. */
 const IDLES: Record<string, number> = {
   kick: 1800,
@@ -81,6 +181,9 @@ export function BabyLayers({
 }): ReactElement {
   const idle = useBabyIdle(animate, held);
   const suit = look.topColour;
+  // An outfit picked for a grown-up means nothing here, so anything unrecognised is a
+  // babygro rather than nothing at all.
+  const worn = (look.topId && BABY_SUITS[look.topId]) || BABY_SUITS.babygro;
   const eyes = EYE_STYLES[look.eyesId] ?? EYE_STYLES.round;
   const mouth = MOUTH_STYLES[look.mouthId] ?? MOUTH_STYLES.smile;
 
@@ -88,28 +191,35 @@ export function BabyLayers({
     <g className={idle ? "bb-idle bb-idle-" + idle : undefined}>
       {idle && pin()}
 
-      {/* Legs, tucked out in front the way a sitting baby's are. */}
+      {/* Legs and body together: on a baby they are one garment as often as not. */}
       <g className="bb-legs">
         {pin()}
-        <ellipse cx={78} cy={374} rx={19} ry={12} fill={suit} />
-        <ellipse cx={122} cy={374} rx={19} ry={12} fill={suit} />
-        <ellipse cx={64} cy={376} rx={9} ry={7} fill={shade(suit, -28)} />
-        <ellipse cx={136} cy={376} rx={9} ry={7} fill={shade(suit, -28)} />
+        {worn.body(suit, look.skin)}
       </g>
-
-      {/* Body: one rounded babygro, because a baby has no waist to speak of. */}
-      <path d="M68,344 q32,-12 64,0 l6,26 q-38,12 -76,0 z" fill={suit} />
-      <path d="M72,352 q28,8 56,0" stroke={shade(suit, -22)} strokeWidth={2.4} fill="none" />
 
       {/* Arms, stubby and out to the sides. */}
       <g className="bb-arm-l">
         {pin()}
-        <ellipse cx={58} cy={348} rx={10} ry={13} fill={suit} transform="rotate(-24 58 348)" />
+        <ellipse
+          cx={58}
+          cy={348}
+          rx={10}
+          ry={13}
+          fill={worn.bareArms ? look.skin : suit}
+          transform="rotate(-24 58 348)"
+        />
         <circle cx={51} cy={359} r={8} fill={look.skin} />
       </g>
       <g className="bb-arm-r">
         {pin()}
-        <ellipse cx={142} cy={348} rx={10} ry={13} fill={suit} transform="rotate(24 142 348)" />
+        <ellipse
+          cx={142}
+          cy={348}
+          rx={10}
+          ry={13}
+          fill={worn.bareArms ? look.skin : suit}
+          transform="rotate(24 142 348)"
+        />
         <circle cx={149} cy={359} r={8} fill={look.skin} />
       </g>
 

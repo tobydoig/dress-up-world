@@ -193,6 +193,13 @@ const SKY: Record<TimeOfDay, string> = {
   night: "#28306b",
 };
 
+/** Where the clouds sit, and how big. Drawn twice, a room apart — see the drift below. */
+const CLOUDS: Array<[number, number, number]> = [
+  [70, 60, 1],
+  [188, 36, 0.8],
+  [252, 86, 0.6],
+];
+
 /** Fixed so the stars don't jump about every time the room re-renders. */
 const STARS: Array<[number, number, number]> = [
   [46, 34, 2.2], [92, 58, 1.6], [128, 26, 2], [260, 40, 1.8],
@@ -584,18 +591,37 @@ const RoomFittings = memo(function RoomFittings({ room, time }: { room: RoomDef;
           />
         </g>
 
-        {([
-          [70, 60, 1],
-          [188, 36, 0.8],
-          [252, 86, 0.6],
-        ] as Array<[number, number, number]>).map(([x, y, s]) => (
-          <g key={x} transform={"translate(" + x + " " + y + ") scale(" + s + ")"} opacity={0.85}>
-            <circle cx={-16} cy={4} r={11} fill="#fffdfa" />
-            <circle cx={0} cy={-3} r={15} fill="#fffdfa" />
-            <circle cx={16} cy={5} r={10} fill="#fffdfa" />
-            <rect x={-22} y={4} width={44} height={11} rx={5.5} fill="#fffdfa" />
+        {/*
+         * Two copies a room apart, drifting exactly one room's width: by the time the first
+         * set has left, the second is sitting where the first began, so the loop has no seam.
+         * The same trick the computer's scrolling screen uses.
+         *
+         * Clipped to the sky, and not for tidiness: the scene is letterboxed inside an svg
+         * that is wider than it, so anything drawn past the edge of the room is still drawn
+         * — a cloud that had sailed off the left came out onto the grass beside the garden.
+         *
+         * The clip goes on a still parent and the drift on the child. On one element they
+         * share a coordinate system, so the window slides along with the clouds and holds
+         * nothing in.
+         */}
+        <g clipPath="url(#sky-band)">
+          <g className="cloud-drift">
+            {[0, ROOM_W].map((offset) =>
+              CLOUDS.map(([x, y, scale]) => (
+                <g
+                  key={offset + ":" + x}
+                  transform={"translate(" + (x + offset) + " " + y + ") scale(" + scale + ")"}
+                  opacity={0.85}
+                >
+                  <circle cx={-16} cy={4} r={11} fill="#fffdfa" />
+                  <circle cx={0} cy={-3} r={15} fill="#fffdfa" />
+                  <circle cx={16} cy={5} r={10} fill="#fffdfa" />
+                  <rect x={-22} y={4} width={44} height={11} rx={5.5} fill="#fffdfa" />
+                </g>
+              ))
+            )}
           </g>
-        ))}
+        </g>
       </g>
     );
   }

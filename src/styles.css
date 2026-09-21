@@ -1859,3 +1859,64 @@ button {
     animation: none;
   }
 }
+
+/* ---------- a breeze through the greenery ---------- */
+
+/*
+ * Pivots on the bottom middle of the plant's own box, which for everything this is used on
+ * is where the stem meets the soil or the rim of the pot — so the plant leans rather than
+ * slides. fill-box is what makes "the plant's own box" mean that; without it the rotation
+ * would be taken about the middle of the whole room.
+ *
+ * Duration and delay come from the element, so no two plants nod in time.
+ */
+.plant-sway {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation-name: plant-sway;
+  animation-duration: 4.2s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes plant-sway {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plant-sway {
+    animation: none;
+  }
+}
+
+/* ---------- clouds ---------- */
+
+/*
+ * One room's width, which is exactly the gap between the two copies of the clouds — so the
+ * moment the drift restarts, the second set is where the first one was and nothing jumps.
+ * Slow: a cloud takes a minute and a half to cross the garden.
+ */
+.cloud-drift {
+  animation: cloud-drift 90s linear infinite;
+}
+
+@keyframes cloud-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-400px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-drift {
+    animation: none;
+  }
+}

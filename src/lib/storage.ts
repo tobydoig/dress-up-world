@@ -335,6 +335,10 @@ export function loadSave(): GameSave {
             if (typeof c.look.motifColour !== "string") {
               look.motifColour = LEGACY_MOTIF_COLOUR[look.motifId ?? ""] ?? DEFAULT_LOOK.motifColour;
             }
+            // There was briefly a cross mouth. It never looked cross, only wrong, so anyone
+            // who chose it gets the grumpy one — falling through to the default would have
+            // turned a deliberately unhappy face cheerful.
+            if (look.mouthId === "angry") look.mouthId = "frown";
             return {
               id: c.id,
               kind: (c.kind === "baby" ? "baby" : "child") as CharacterKind,

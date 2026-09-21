@@ -281,7 +281,9 @@ export function DesignMode({
               <span className="item-none">＋</span>
               <span className="item-name">New one</span>
             </button>
-            {characters.length === 0 && <p className="hint">No saved characters yet — tap Save to keep this one.</p>}
+            {characters.length === 0 && (
+              <p className="hint">Nobody saved yet — tap Play and this one is kept.</p>
+            )}
             {characters.map((c) => (
               <div key={c.id} className={"item item-saved" + (c.id === editingId ? " is-active" : "")}>
                 <button

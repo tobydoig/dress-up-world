@@ -979,13 +979,16 @@ export function ExploreMode({
       );
       applyDrag(drag);
 
+      // isOverBin finds nothing when the bin isn't rendered, which is how a drag that the
+      // bin doesn't offer to take — the last character out — never lights it up.
+      const over = isOverBin(drag, ev);
+      if (over !== drag.overBin) {
+        drag.overBin = over;
+        setOverBin(over);
+      }
+
       if (drag.target.kind === "furniture") {
         const dragged = drag.target.id;
-        const over = isOverBin(drag, ev);
-        if (over !== drag.overBin) {
-          drag.overBin = over;
-          setOverBin(over);
-        }
 
         // The watering can is tipped over a bed by being dragged onto it.
         if (dragged === WATERING_CAN) {
@@ -1031,10 +1034,17 @@ export function ExploreMode({
         return;
       }
 
-      // Dropped on the bin: the piece goes away. Only ever reached after a real drag, so a tap
-      // on something that happens to sit under the bin can't delete it by accident.
-      if (drag.target.kind === "furniture" && drag.overBin) {
-        binFurniture(drag.target.id);
+      // Dropped on the bin. Only ever reached after a real drag, so a tap on something that
+      // happens to sit under the bin can't get rid of it by accident.
+      if (drag.overBin) {
+        if (drag.target.kind === "furniture") {
+          binFurniture(drag.target.id);
+        } else {
+          // A character is never thrown away — she is put back in the list to be chosen
+          // again, which is why the bin says something different while one is being carried.
+          onToggleInScene(drag.target.id);
+          playPop();
+        }
         return;
       }
 
@@ -1551,6 +1561,14 @@ export function ExploreMode({
 
   // One reading per render. Thirst is measured in hours, so nothing needs a ticking clock.
   const now = Date.now();
+  /**
+   * The bin takes furniture away for good, and takes a character off the stage — two
+   * different promises, so it says which one it is making. It doesn't appear at all for the
+   * last character out: there would be nowhere for her to go and nobody left in the room.
+   */
+  const dragKind: "avatar" | "furniture" | null =
+    draggingKey === null ? null : draggingKey.startsWith("avatar:") ? "avatar" : "furniture";
+  const binOffers = dragKind === "furniture" || (dragKind === "avatar" && cast.length > 1);
   const night = timeOfDay === "night";
   const wash = WASH[timeOfDay];
   /* Rendered whatever the time, so the lamps come up as the room goes down rather than
@@ -1785,10 +1803,12 @@ export function ExploreMode({
         </button>
 
         {/* Only while something is being dragged, so it never sits in the way of the room. */}
-        {draggingKey !== null && draggingKey !== "avatar" && (
+        {binOffers && (
           <div ref={binRef} className={"bin" + (overBin ? " is-over" : "")} aria-hidden="true">
-            <span className="bin-icon">🗑️</span>
-            <span className="bin-label">Drop to remove</span>
+            <span className="bin-icon">{dragKind === "avatar" ? "🚪" : "🗑️"}</span>
+            <span className="bin-label">
+              {dragKind === "avatar" ? "Drop to send back" : "Drop to remove"}
+            </span>
           </div>
         )}
 
@@ -2009,11 +2029,12 @@ export function ExploreMode({
                           animate={false}
                           crop="10 6 180 220"
                         />
-                        {/* A tick for "out here with me", and the dress for the one the
-                            Dress up button would take you to. */}
-                        {out && (
-                          <span className="item-tick">{c.id === activeId ? "👗" : "✓"}</span>
-                        )}
+                        {/* Two separate things, so they can be read separately: a tick for
+                            "out here with me", a dress for the one the Dress up button would
+                            take you to. Since she chooses who comes out, the one she is
+                            dressing is often not one of them. */}
+                        {out && <span className="item-tick">✓</span>}
+                        {c.id === activeId && <span className="item-dress">👗</span>}
                       </span>
                       <span className="item-name">{c.name}</span>
                     </button>

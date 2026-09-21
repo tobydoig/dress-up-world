@@ -341,8 +341,10 @@ export function loadSave(): GameSave {
     const inScene = (Array.isArray(parsed.inScene) ? parsed.inScene : [])
       .filter((id): id is string => typeof id === "string" && known.has(id))
       .filter((id, i, all) => all.indexOf(id) === i);
-    // Whoever "Dress up" would edit has to be somebody she can see.
-    if (activeId && !inScene.includes(activeId)) inScene.unshift(activeId);
+    // Who is out is hers to choose, and the one she is dressing needn't be one of them — but
+    // a save with characters in it and nobody out would open on an empty room, which reads
+    // as the game having lost them.
+    if (inScene.length === 0 && activeId) inScene.push(activeId);
     const lastRoom = ROOM_ORDER.includes(parsed.lastRoom as RoomId) ? (parsed.lastRoom as RoomId) : "playroom";
     const savedTime = (parsed.timeOfDay as string) === LEGACY_DUSK ? "night" : parsed.timeOfDay;
     const timeOfDay = TIME_ORDER.includes(savedTime as TimeOfDay) ? (savedTime as TimeOfDay) : "day";

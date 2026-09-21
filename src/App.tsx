@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { DesignMode } from "./design/DesignMode";
 import { ExploreMode } from "./explore/ExploreMode";
 import { capacityOf } from "./explore/furniture";
+import { CROPS } from "./data/growing";
 import { DEFAULT_LOOK, randomLook, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
 import {
@@ -259,6 +260,66 @@ export function App() {
     }));
   }
 
+  /** Sow a seed packet from the basket into an empty bed. */
+  function plantSeed(plotId: string, index: number) {
+    setSave((prev) => {
+      const seed = prev.basket[index];
+      const room = prev.rooms[prev.lastRoom];
+      const plot = room.items.find((i) => i.id === plotId);
+      if (!seed || !CROPS[seed] || !plot || plot.planted) return prev;
+      return {
+        ...prev,
+        basket: removeAt(prev.basket, index),
+        rooms: {
+          ...prev.rooms,
+          [prev.lastRoom]: {
+            ...room,
+            items: room.items.map((i) =>
+              // wateredAt 0 means "never watered", so a fresh bed is thirsty straight away
+              // and the first drink can go in immediately.
+              i.id === plotId ? { ...i, planted: seed, stage: 0, wateredAt: 0 } : i
+            ),
+          },
+        },
+      };
+    });
+  }
+
+  /** One drink, one step. Growth comes from the watering, never from the clock alone. */
+  function waterPlot(plotId: string) {
+    updateRoom((room) => ({
+      ...room,
+      items: room.items.map((i) =>
+        i.id === plotId && i.planted ? { ...i, stage: i.stage + 1, wateredAt: Date.now() } : i
+      ),
+    }));
+  }
+
+  /** Picking it gives the crop and a seed back, so the next one doesn't need buying. */
+  function harvestPlot(plotId: string) {
+    setSave((prev) => {
+      const room = prev.rooms[prev.lastRoom];
+      const plot = room.items.find((i) => i.id === plotId);
+      const crop = plot?.planted ? CROPS[plot.planted] : null;
+      if (!plot || !crop) return prev;
+
+      const picked = [crop.crop, crop.seed].slice(0, Math.max(0, BASKET_LIMIT - prev.basket.length));
+      return {
+        ...prev,
+        basket: [...prev.basket, ...picked],
+        rooms: {
+          ...prev.rooms,
+          [prev.lastRoom]: {
+            ...room,
+            items: room.items.map((i) =>
+              i.id === plotId ? { ...i, planted: null, stage: 0, wateredAt: 0 } : i
+            ),
+          },
+        },
+      };
+    });
+  }
+
   function cookThings(indices: number[], dishId: string) {
     setSave((prev) => {
       if (indices.length === 0 || indices.some((i) => prev.basket[i] === undefined)) return prev;
@@ -303,6 +364,9 @@ export function App() {
           onStore={storeThing}
           onTakeOut={takeOutThing}
           onCook={cookThings}
+          onPlant={plantSeed}
+          onWater={waterPlot}
+          onHarvest={harvestPlot}
           characters={save.characters}
           activeId={save.activeId}
           onSwitchCharacter={switchCharacter}

@@ -142,3 +142,9 @@ export function playThud(): void {
 export function playTurn(): void {
   tone({ from: 380, to: 540, duration: 0.1, type: "sine", gain: 0.09 });
 }
+
+/** Water going into a plant pot. */
+export function playWater(): void {
+  tone({ from: 700, to: 300, duration: 0.18, type: "sine", gain: 0.1 });
+  tone({ from: 520, to: 240, duration: 0.2, type: "sine", gain: 0.08, delay: 0.09 });
+}

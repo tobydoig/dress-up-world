@@ -23,13 +23,17 @@ import {
   STALLS,
   WALL_MOUNTED,
   CONTAINER_DROP,
+  PLOTS,
+  WATERING_CAN,
   capacityOf,
   facingCount,
   isLit,
+  plotDrop,
   renderFurniture,
   seatShift,
   slotAt,
 } from "./furniture";
+import { CROPS, isThirsty, ripeness } from "../data/growing";
 import { FURNITURE_GROUPS, ROOMS, ROOM_ORDER, type RoomDef, type RoomId } from "../data/rooms";
 import {
   APPLIANCES,
@@ -61,6 +65,7 @@ import {
   playTap,
   playThud,
   playTurn,
+  playWater,
   playWhoosh,
   playYuck,
 } from "../lib/sound";
@@ -201,7 +206,10 @@ type ThingSource =
   | { kind: "container"; id: string; index: number };
 
 /** Somewhere a carried thing can be let go and have something happen. */
-type DropTarget = { kind: "container"; id: string } | { kind: "mouth" };
+type DropTarget =
+  | { kind: "container"; id: string }
+  | { kind: "plot"; id: string }
+  | { kind: "mouth" };
 
 interface ThingDrag {
   thingId: string;
@@ -232,6 +240,8 @@ interface DragState {
    * created.
    */
   overBin: boolean;
+  /** Set while the watering can is being dragged over a planted bed. */
+  overPlot: string | null;
   /**
    * The nodes the drag writes to directly. Every move used to update React state, which
    * redrew the scene to move one thing; now the move sets a transform and the save is told
@@ -348,16 +358,19 @@ const Piece = memo(function Piece({
   item,
   dragging,
   popped,
+  thirsty,
   onGrab,
   onGrabThing,
 }: {
   item: PlacedFurniture;
   dragging: boolean;
   popped: boolean;
+  /** Passed in rather than worked out here: a fresh object every render would defeat memo. */
+  thirsty: boolean;
   onGrab: (e: ReactPointerEvent<SVGGElement>, id: string) => void;
   onGrabThing: (e: ReactPointerEvent<SVGGElement>, from: ThingSource, thingId: string) => void;
 }): ReactElement | null {
-  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, item);
+  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, { ...item, thirsty });
   if (!art) return null;
 
   return (
@@ -367,6 +380,7 @@ const Piece = memo(function Piece({
           back to where it was authored. */}
       <g
         className={"draggable" + (dragging ? " is-dragging" : "")}
+        data-piece={item.id}
         transform={pieceTransform(item.dx, item.dy)}
         onPointerDown={(e) => onGrab(e, item.id)}
       >
@@ -525,6 +539,9 @@ export function ExploreMode({
   onStore,
   onTakeOut,
   onCook,
+  onPlant,
+  onWater,
+  onHarvest,
   characters,
   activeId,
   onSwitchCharacter,
@@ -554,6 +571,9 @@ export function ExploreMode({
   onStore: (furnitureId: string, index: number) => void;
   onTakeOut: (furnitureId: string, index: number) => void;
   onCook: (indices: number[], dishId: string) => void;
+  onPlant: (plotId: string, index: number) => void;
+  onWater: (plotId: string) => void;
+  onHarvest: (plotId: string) => void;
   characters: SavedCharacter[];
   activeId: string | null;
   onSwitchCharacter: (id: string) => void;
@@ -579,6 +599,8 @@ export function ExploreMode({
     over: DropTarget | null;
   } | null>(null);
   const [overBin, setOverBin] = useState(false);
+  /** Which bed the watering can is hovering over, for the highlight. */
+  const [overPlot, setOverPlot] = useState<string | null>(null);
   /** When the sheet opened, to ignore the click that opened it arriving on the new backdrop. */
   const sheetOpenedAt = useRef(0);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
@@ -795,10 +817,22 @@ export function ExploreMode({
       applyDrag(drag);
 
       if (drag.target.kind === "furniture") {
+        const dragged = drag.target.id;
         const over = isOverBin(drag, ev);
         if (over !== drag.overBin) {
           drag.overBin = over;
           setOverBin(over);
+        }
+
+        // The watering can is tipped over a bed by being dragged onto it.
+        if (dragged === WATERING_CAN) {
+          const at = toRoom(ev.clientX, ev.clientY);
+          const bed = at ? plotUnder(at) : null;
+          const id = bed?.planted ? bed.id : null;
+          if (id !== drag.overPlot) {
+            drag.overPlot = id;
+            setOverPlot(id);
+          }
         }
       }
     };
@@ -813,6 +847,7 @@ export function ExploreMode({
       dragRef.current = null;
       setDraggingKey(null);
       setOverBin(false);
+      setOverPlot(null);
 
       // The moves only moved the DOM, so this is where the save finds out where things are.
       if (drag.target.kind === "avatar") {
@@ -840,6 +875,15 @@ export function ExploreMode({
         return;
       }
 
+      if (drag.target.kind === "furniture" && drag.overPlot) {
+        water(drag.overPlot);
+        // Back to its spot afterwards. Left where it was dropped it sits on top of the bed
+        // it just watered, and the next drag is a zero-distance move — which reads as a tap
+        // and waters nothing.
+        onMoveFurniture(WATERING_CAN, 0, 0);
+        return;
+      }
+
       if (drag.target.kind === "avatar") settleAvatar(drag.x, drag.y);
       playPop();
     };
@@ -860,6 +904,7 @@ export function ExploreMode({
       y: originY,
       pose: roomStateRef.current.avatarPose,
       overBin: false,
+      overPlot: null,
       binRect: null,
       move,
       end,
@@ -871,6 +916,33 @@ export function ExploreMode({
 
     setDraggingKey(target.kind === "avatar" ? "avatar" : target.id);
     playTap();
+  }
+
+  /**
+   * A drink. Growth comes from this, never from the clock — the clock only decides when the
+   * next one is due, which is what makes it worth coming back.
+   */
+  function water(plotId: string) {
+    const bed = roomStateRef.current.items.find((i) => i.id === plotId);
+    if (!bed?.planted) return;
+    const crop = CROPS[bed.planted];
+    if (!crop) return;
+
+    if (ripeness(crop, bed.stage) >= 1) {
+      setReaction("It's ready — give it a tap to pick it!");
+      playTap();
+      return;
+    }
+    if (!isThirsty(bed.wateredAt, Date.now())) {
+      // Not a telling-off: it simply doesn't need one yet.
+      setReaction("It's had a drink. Come back later.");
+      playTap();
+      return;
+    }
+
+    onWater(plotId);
+    setReaction("Glug glug!");
+    playWater();
   }
 
   /** Throw a piece away, standing the character up first if they were sitting on it. */
@@ -910,6 +982,28 @@ export function ExploreMode({
     // cupboard opens, a lamp lights, a chair turns.
     if (id === "pictureFrame") {
       setPadId(id);
+      playTap();
+      return;
+    }
+
+    if (PLOTS.has(id)) {
+      const crop = item.planted ? CROPS[item.planted] : null;
+      if (!crop) {
+        setReaction("Drop a seed packet in here.");
+        playTap();
+        return;
+      }
+      if (ripeness(crop, item.stage) >= 1) {
+        onHarvest(id);
+        setReaction("You picked " + THINGS[crop.crop].name.toLowerCase() + "!");
+        playSparkle();
+        return;
+      }
+      setReaction(
+        isThirsty(item.wateredAt, Date.now())
+          ? "This one is thirsty."
+          : "It's growing. Come back later."
+      );
       playTap();
       return;
     }
@@ -1007,10 +1101,29 @@ export function ExploreMode({
     return clientToSvg(svgRef.current, clientX, clientY);
   }
 
-  /** What the finger is over: a mouth to feed, an open cupboard to fill, or nothing. */
-  function dropTargetAt(clientX: number, clientY: number): DropTarget | null {
+  /** Which bed the pointer is over, whatever is being carried. */
+  function plotUnder(at: { x: number; y: number }): PlacedFurniture | null {
+    for (const item of roomStateRef.current.items) {
+      if (!PLOTS.has(item.id)) continue;
+      const box = plotDrop(item.id);
+      if (!box) continue;
+      const x = box.x + item.dx;
+      const y = FURNITURE_DROP + box.y + item.dy;
+      if (at.x >= x && at.x <= x + box.w && at.y >= y && at.y <= y + box.h) return item;
+    }
+    return null;
+  }
+
+  /** A bed to sow, a mouth to feed, an open cupboard to fill, or nothing. */
+  function dropTargetAt(clientX: number, clientY: number, thingId: string): DropTarget | null {
     const at = toRoom(clientX, clientY);
     if (!at) return null;
+
+    // Seeds only ever go in the ground, so an empty bed takes priority over anything else.
+    if (CROPS[thingId]) {
+      const bed = plotUnder(at);
+      if (bed && !bed.planted) return { kind: "plot", id: bed.id };
+    }
 
     // The face wins any tie. A cupboard standing where someone's head is shouldn't get fed.
     if (lookRef.current) {
@@ -1038,7 +1151,7 @@ export function ExploreMode({
     const move = (ev: PointerEvent) => {
       const drag = thingDragRef.current;
       if (!drag) return;
-      drag.over = dropTargetAt(ev.clientX, ev.clientY);
+      drag.over = dropTargetAt(ev.clientX, ev.clientY, drag.thingId);
       setHeld({
         thingId: drag.thingId,
         index: drag.from.kind === "basket" ? drag.from.index : null,
@@ -1081,6 +1194,15 @@ export function ExploreMode({
   function dropThing(from: ThingSource, target: DropTarget | null) {
     if (target?.kind === "mouth") {
       eat(from);
+      return;
+    }
+
+    if (target?.kind === "plot") {
+      if (from.kind === "basket") {
+        onPlant(target.id, from.index);
+        setReaction("Planted! Now give it a drink.");
+        playSparkle();
+      }
       return;
     }
 
@@ -1233,6 +1355,8 @@ export function ExploreMode({
     []
   );
 
+  // One reading per render. Thirst is measured in hours, so nothing needs a ticking clock.
+  const now = Date.now();
   const tint = TINT[timeOfDay];
   const lit = timeOfDay !== "day" ? roomState.items.filter((i) => LIGHT_GLOW[i.id] && isLit(i.id, i)) : [];
   /**
@@ -1337,6 +1461,7 @@ export function ExploreMode({
                 item={item}
                 dragging={draggingKey === item.id}
                 popped={item.id === "balloons" && poppedAt !== null}
+                thirsty={item.planted !== null && isThirsty(item.wateredAt, now)}
                 onGrab={grabPiece}
                 onGrabThing={grabThing}
               />
@@ -1379,15 +1504,32 @@ export function ExploreMode({
                   );
                 })}
 
-            {held && look && (
-              <circle
-                className={"drop-zone mouth-zone" + (held.over?.kind === "mouth" ? " is-over" : "")}
-                cx={faceAt(roomState).x}
-                cy={faceAt(roomState).y}
-                r={faceAt(roomState).r * 1.5}
-                pointerEvents="none"
-              />
-            )}
+            {/* Beds light up both for a seed on a fingertip and for the can being carried
+                over — only the ones that can actually take what is being offered. */}
+            {roomState.items
+              .filter((item) => {
+                if (!PLOTS.has(item.id)) return false;
+                if (held) return !!CROPS[held.thingId] && !item.planted;
+                return draggingKey === WATERING_CAN && !!item.planted;
+              })
+              .map((item) => {
+                const box = plotDrop(item.id);
+                if (!box) return null;
+                const isOver =
+                  (held?.over?.kind === "plot" && held.over.id === item.id) || overPlot === item.id;
+                return (
+                  <rect
+                    key={item.id}
+                    className={"drop-zone" + (isOver ? " is-over" : "")}
+                    x={box.x + item.dx}
+                    y={FURNITURE_DROP + box.y + item.dy}
+                    width={box.w}
+                    height={box.h}
+                    rx={8}
+                    pointerEvents="none"
+                  />
+                );
+              })}
 
             {/* Nightfall goes over the whole scene, and the lamps then punch back through it. */}
             {tint.opacity > 0 && (

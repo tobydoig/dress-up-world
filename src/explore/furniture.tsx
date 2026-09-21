@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { STALL_STOCK, THINGS } from "../data/things";
+import { CROPS, ripeness, type Crop } from "../data/growing";
 import type { Stroke } from "../lib/storage";
 
 /**
@@ -18,6 +19,11 @@ export interface FurnitureCtx {
   on: boolean;
   stored: string[];
   strokes: Stroke[];
+  /** A growing bed: what is in it and how many waterings it has had. */
+  planted: string | null;
+  stage: number;
+  /** Worked out by the room rather than here, so drawing stays a pure function of state. */
+  thirsty: boolean;
 }
 
 export type FurnitureRender = (ctx: FurnitureCtx) => ReactElement;
@@ -29,6 +35,9 @@ export const CATALOGUE_CTX: FurnitureCtx = {
   on: true,
   stored: [],
   strokes: [],
+  planted: null,
+  stage: 0,
+  thirsty: false,
 };
 
 /**
@@ -105,10 +114,13 @@ export const LIGHT_GLOW: Record<string, Glow> = {
   fridge: { cx: 359, cy: 174, rx: 52, ry: 62 },
 };
 
-/** Whether a placed piece is currently giving off light. */
-export function isLit(id: string, ctx: FurnitureCtx): boolean {
-  if (id === "fridge") return ctx.open;
-  return LAMPS.has(id) && ctx.on;
+/**
+ * Whether a placed piece is currently giving off light. Asks for only the two fields it
+ * actually reads, so a plain saved piece can be handed straight to it.
+ */
+export function isLit(id: string, state: { open: boolean; on: boolean }): boolean {
+  if (id === "fridge") return state.open;
+  return LAMPS.has(id) && state.on;
 }
 
 /** Where the things inside an open container are stacked up. */
@@ -275,6 +287,104 @@ function chair(id: string, facing: number): ReactElement {
   const view =
     turn === 1 ? chairFront(base.colour) : turn === 3 ? chairBack(base.colour) : chairSide(base.colour);
   return <g transform={"translate(" + base.x + " 197) scale(" + mirror + " 1)"}>{view}</g>;
+}
+
+/* ---------------- the garden ---------------- */
+
+const PLOT_W = 78;
+/** The top of the soil. Everything growing is measured up from here. */
+const SOIL = 206;
+
+/** Where the beds are authored, which also gives each one its drop box. */
+export const PLOT_X: Record<string, number> = { plotOne: 6, plotTwo: 92, plotThree: 178 };
+
+export const PLOTS = new Set(Object.keys(PLOT_X));
+
+export const WATERING_CAN = "wateringCan";
+
+/**
+ * The whole bed, from the top of a fully grown tree down to the front of the soil — not just
+ * the earth. Once something is growing, the plant IS the bed as far as a child is concerned,
+ * and a box that only covered the soil meant aiming the can at the leaves hit nothing.
+ */
+function plotBox(x: number): { x: number; y: number; w: number; h: number } {
+  return { x: x - 6, y: 108, w: PLOT_W + 12, h: 124 };
+}
+
+export function plotDrop(id: string): { x: number; y: number; w: number; h: number } | null {
+  const x = PLOT_X[id];
+  return x === undefined ? null : plotBox(x);
+}
+
+/** A low crop: a stem and leaves that get bigger, with the crop itself on once it is ripe. */
+function bush(cx: number, grown: number, crop: Crop): ReactElement {
+  const h = 8 + grown * 30;
+  const leaf = 5 + grown * 8;
+  return (
+    <g>
+      <path d={"M" + cx + "," + SOIL + " v" + -h} stroke="#2f8c46" strokeWidth={3} strokeLinecap="round" />
+      <ellipse cx={cx - leaf} cy={SOIL - h * 0.5} rx={leaf} ry={leaf * 0.6} fill="#3fae5a" />
+      <ellipse cx={cx + leaf} cy={SOIL - h * 0.72} rx={leaf * 0.9} ry={leaf * 0.55} fill="#5ed64a" />
+      {grown >= 1 && (
+        <g transform={"translate(" + cx + " " + (SOIL - h - 7) + ") scale(0.55)"}>
+          {THINGS[crop.crop].art()}
+        </g>
+      )}
+    </g>
+  );
+}
+
+/** A tree: a trunk that thickens and a canopy that spreads, fruiting at the end. */
+function tree(cx: number, grown: number, crop: Crop): ReactElement {
+  const h = 10 + grown * 52;
+  const canopy = 6 + grown * 22;
+  return (
+    <g>
+      <rect x={cx - 2 - grown * 2} y={SOIL - h} width={4 + grown * 4} height={h} rx={2} fill="#8d5a2c" />
+      <circle cx={cx} cy={SOIL - h} r={canopy} fill="#3fae5a" />
+      <circle cx={cx - canopy * 0.55} cy={SOIL - h + canopy * 0.35} r={canopy * 0.66} fill="#2f8c46" />
+      <circle cx={cx + canopy * 0.55} cy={SOIL - h + canopy * 0.28} r={canopy * 0.6} fill="#5ed64a" />
+      {grown >= 1 &&
+        ([-0.55, 0.45] as const).map((side) => (
+          <g
+            key={side}
+            transform={
+              "translate(" + (cx + canopy * side) + " " + (SOIL - h + canopy * 0.2) + ") scale(0.4)"
+            }
+          >
+            {THINGS[crop.crop].art()}
+          </g>
+        ))}
+    </g>
+  );
+}
+
+function plot(x: number, c: FurnitureCtx): ReactElement {
+  const crop = c.planted ? CROPS[c.planted] : null;
+  const grown = crop ? ripeness(crop, c.stage) : 0;
+  const cx = x + PLOT_W / 2;
+  return (
+    <g>
+      {/* The same box the can and the seeds are tested against, so what looks
+          tappable and what is tappable are the same thing. */}
+      {(() => { const b = plotBox(x); return hitPad(b.x, b.y, b.w, b.h); })()}
+      <path d={"M" + (x + 4) + ",232 L" + x + "," + SOIL + " h" + PLOT_W + " l-4,26 z"} fill="#6b4a2f" />
+      <ellipse cx={cx} cy={SOIL} rx={PLOT_W / 2} ry={6} fill="#7d5a3a" />
+      <rect x={x - 3} y={SOIL - 5} width={PLOT_W + 6} height={9} rx={4} fill="#8d5a2c" />
+
+      {!crop && <ellipse cx={cx} cy={SOIL - 3} rx={8} ry={4} fill="#5c3f28" />}
+      {crop && grown === 0 && <ellipse cx={cx} cy={SOIL - 4} rx={9} ry={5} fill="#5c3f28" />}
+      {crop && grown > 0 && (crop.kind === "tree" ? tree(cx, grown, crop) : bush(cx, grown, crop))}
+
+      {/* A drop, not a wilt. Nothing here suffers for being left — it just asks. */}
+      {crop && c.thirsty && (
+        <g className="wants-water" transform={"translate(" + cx + " 122)"}>
+          <path d="M0,-10 q8,10 0,16 q-8,-6 0,-16 z" fill="#3aa0ff" />
+          <ellipse cx={-2.5} cy={1} rx={1.8} ry={2.6} fill="#bfe6ff" />
+        </g>
+      )}
+    </g>
+  );
 }
 
 /* ---------------- market stalls ---------------- */
@@ -821,6 +931,45 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     <g>
       <ellipse cx={170} cy={296} rx={104} ry={30} fill="#2ed6b8" opacity={0.8} />
       <ellipse cx={170} cy={296} rx={70} ry={20} fill="#66e6cf" />
+    </g>
+  ),
+
+  // ---------------- garden ----------------
+  plotOne: (c) => plot(PLOT_X.plotOne, c),
+  plotTwo: (c) => plot(PLOT_X.plotTwo, c),
+  plotThree: (c) => plot(PLOT_X.plotThree, c),
+
+  /** Dragged onto a bed to water it. Furniture rather than something carried, so watering
+   *  is picking the can up and tipping it over the plant. */
+  wateringCan: () => (
+    <g>
+      {hitPad(330, 186, 66, 46)}
+      <path d="M338,204 h34 l-4,28 h-26 z" fill="#5ed64a" />
+      <rect x={334} y={199} width={42} height={8} rx={4} fill="#3fae5a" />
+      <path d="M340,199 q9,-15 22,-2" stroke="#3fae5a" strokeWidth={4.5} fill="none" strokeLinecap="round" />
+      <path d="M374,206 l16,-10 l4,6 l-16,10 z" fill="#3fae5a" />
+      <ellipse cx={391} cy={198} rx={6} ry={4.5} fill="#9be07a" transform="rotate(-32 391 198)" />
+    </g>
+  ),
+
+  /** Where seeds come from. The market's four stalls already fill its width, and seeds
+   *  belong where the growing happens. */
+  seedTable: (c) => (
+    <g>
+      {hitPad(264, 176, 62, 56)}
+      <rect x={264} y={196} width={62} height={9} rx={4} fill={WOOD} />
+      <rect x={270} y={205} width={7} height={27} rx={3} fill={WOOD_DARK} />
+      <rect x={313} y={205} width={7} height={27} rx={3} fill={WOOD_DARK} />
+      {(STALL_STOCK.seedTable ?? []).slice(0, 3).map((id, i) => {
+        const thing = THINGS[id];
+        if (!thing) return null;
+        return (
+          <g key={id} transform={"translate(" + (277 + i * 18) + " 186) scale(0.4)"}>
+            {thing.art()}
+          </g>
+        );
+      })}
+      {c.open && <rect x={262} y={194} width={66} height={4} rx={2} fill="#ffd23f" />}
     </g>
   ),
 

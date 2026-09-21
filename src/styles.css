@@ -1642,13 +1642,23 @@ button {
   }
 }
 
-/* The character's face, lit up while food is being carried. Round rather than boxy, because
-   it is a head. */
-.mouth-zone {
-  stroke-dasharray: 7 6;
+/* No marker round the face while food is carried: the character opening her mouth says it
+   far better than a ring drawn round her head, which only looked like a target. */
+
+/* A plant asking for a drink. A bob, not a wilt — nothing here suffers for being left. */
+.wants-water {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: wants-water 1.9s ease-in-out infinite;
 }
 
-.mouth-zone.is-over {
-  fill: rgba(255, 210, 63, 0.3);
-  stroke-dasharray: none;
+@keyframes wants-water {
+  0%, 100% { transform: translateY(0); opacity: 0.85; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wants-water {
+    animation: none;
+  }
 }

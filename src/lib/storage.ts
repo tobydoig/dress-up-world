@@ -1,6 +1,7 @@
 import { DEFAULT_LOOK, LEGACY_MOTIF_COLOUR, type AvatarLook } from "../data/wardrobe";
 import { ALL_FURNITURE_IDS, ROOMS, ROOM_ORDER, type RoomId } from "../data/rooms";
 import { ALL_THING_IDS } from "../data/things";
+import { CROPS } from "../data/growing";
 
 export interface SavedCharacter {
   id: string;
@@ -35,6 +36,12 @@ export interface PlacedFurniture {
   /** Ids from THINGS that have been put inside this piece. */
   stored: string[];
   strokes: Stroke[];
+  /** A growing bed: which crop is in it, how many waterings it has had, and when the last
+   *  one was. Growth comes from the waterings; the timestamp only decides when the next
+   *  drink is due. */
+  planted: string | null;
+  stage: number;
+  wateredAt: number;
 }
 
 export type AvatarPose = "stand" | "sit" | "lie";
@@ -88,7 +95,19 @@ export function newId(): string {
 
 /** A piece as it arrives in a room: where it was authored, shut, switched on and empty. */
 export function placeFurniture(id: string): PlacedFurniture {
-  return { id, dx: 0, dy: 0, facing: 0, open: false, on: true, stored: [], strokes: [] };
+  return {
+    id,
+    dx: 0,
+    dy: 0,
+    facing: 0,
+    open: false,
+    on: true,
+    stored: [],
+    strokes: [],
+    planted: null,
+    stage: 0,
+    wateredAt: 0,
+  };
 }
 
 function starterRoom(room: RoomId): RoomState {
@@ -159,6 +178,9 @@ function normaliseItem(raw: Partial<PlacedFurniture> & { id: string }): PlacedFu
     on: bool(raw.on, true),
     stored: things(raw.stored),
     strokes: strokes(raw.strokes),
+    planted: typeof raw.planted === "string" && CROPS[raw.planted] ? raw.planted : null,
+    stage: Math.max(0, Math.round(num(raw.stage, 0))),
+    wateredAt: Math.max(0, num(raw.wateredAt, 0)),
   };
 }
 

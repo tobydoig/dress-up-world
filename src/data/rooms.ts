@@ -1,4 +1,4 @@
-export type RoomId = "playroom" | "kitchen" | "bedroom" | "study" | "market";
+export type RoomId = "playroom" | "kitchen" | "bedroom" | "study" | "garden" | "market";
 
 export interface RoomDef {
   id: RoomId;
@@ -18,7 +18,8 @@ export interface RoomDef {
 }
 
 /** Left-to-right order — the arrows walk along this list and stop at each end. */
-export const ROOM_ORDER: RoomId[] = ["playroom", "kitchen", "bedroom", "study", "market"];
+// Garden before market: grow what you can, buy what you can't.
+export const ROOM_ORDER: RoomId[] = ["playroom", "kitchen", "bedroom", "study", "garden", "market"];
 
 export const ROOMS: Record<RoomId, RoomDef> = {
   playroom: {
@@ -65,6 +66,18 @@ export const ROOMS: Record<RoomId, RoomDef> = {
     floor: "#9c7b5c",
     floorBoards: "#7d6047",
     startWith: ["desk", "computer", "bookcase", "shelves", "plantBig", "deskLamp"],
+  },
+
+  garden: {
+    id: "garden",
+    name: "Garden",
+    icon: "🌱",
+    wall: "#bfe6ff",
+    wallTrim: "#8fd0f5",
+    floor: "#8fbf6a",
+    floorBoards: "#76a855",
+    startWith: ["plotOne", "plotTwo", "plotThree", "seedTable", "wateringCan"],
+    outdoor: true,
   },
 
   market: {
@@ -145,6 +158,17 @@ export const FURNITURE_GROUPS: FurnitureGroup[] = [
       { id: "bedsideLamp", name: "Lamp" },
       { id: "poster", name: "Poster" },
       { id: "plushie", name: "Plushie" },
+    ],
+  },
+  {
+    label: "Garden",
+    icon: "🌱",
+    items: [
+      { id: "plotOne", name: "Bed" },
+      { id: "plotTwo", name: "Bed 2" },
+      { id: "plotThree", name: "Bed 3" },
+      { id: "seedTable", name: "Seeds" },
+      { id: "wateringCan", name: "Watering can" },
     ],
   },
   {

@@ -3,6 +3,9 @@
 # The site is entirely static — three files, no server, no network calls — so "deploying" is
 # just handing that folder to Pages. Nothing built is ever committed: the artifact is produced
 # here and uploaded directly, so the repo can't drift out of step with what is live.
+# Action majors are kept current because GitHub retires the Node each one runs on: when a
+# runtime goes end of life the old majors are forced onto the new one and every step warns.
+# These all run on Node 24.
 name: Deploy to Pages
 
 on:
@@ -25,9 +28,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -38,12 +41,12 @@ jobs:
       # rather than shipping.
       - run: npm run build
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         with:
           # Turns Pages on for this repo the first time, so it doesn't need setting by hand.
           enablement: true
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -55,4 +58,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

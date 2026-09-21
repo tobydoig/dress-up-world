@@ -173,26 +173,6 @@ export function AvatarLayers({
       {/* Bare body underneath everything it wears. */}
       <g key={"body-" + look.skin}>
         <Legs skin={look.skin} pose={pose} />
-        <line
-          className="av-arm-l"
-          x1={ARM.left.x1}
-          y1={ARM.left.y1}
-          x2={ARM.left.x2}
-          y2={ARM.left.y2}
-          stroke={look.skin}
-          strokeWidth={ARM.width}
-          strokeLinecap="round"
-        />
-        <line
-          className="av-arm-r"
-          x1={ARM.right.x1}
-          y1={ARM.right.y1}
-          x2={ARM.right.x2}
-          y2={ARM.right.y2}
-          stroke={look.skin}
-          strokeWidth={ARM.width}
-          strokeLinecap="round"
-        />
         <rect x={NECK.x} y={NECK.y} width={NECK.w} height={NECK.h} rx={NECK.r} fill={shade(look.skin, -22)} />
         <path d={TORSO.path} fill={look.skin} />
       </g>
@@ -205,7 +185,7 @@ export function AvatarLayers({
 
       {look.topId && TOP_STYLES[look.topId] && (
         <g key={"top-" + look.topId + look.topColour + look.motifId + look.motifColour} className={pop}>
-          {TOP_STYLES[look.topId]({ colour: look.topColour, skin: look.skin, motif, uid })}
+          {TOP_STYLES[look.topId].body({ colour: look.topColour, skin: look.skin, motif, uid })}
         </g>
       )}
 
@@ -279,6 +259,45 @@ export function AvatarLayers({
       {look.jewelsId && JEWEL_STYLES[look.jewelsId] && (
         <g key={"jw-" + look.jewelsId + look.jewelsColour} className={pop}>
           {JEWEL_STYLES[look.jewelsId]({ colour: look.jewelsColour })}
+        </g>
+      )}
+
+      {/* Arms come last, over everything including the head. A hand raised to scratch an ear
+          or wave belongs in front of the hair, and there is no pose where an arm hanging at
+          rest overlaps the head at all — so always-in-front costs nothing and fixes the
+          raised case. This is the whole reason a top's sleeves are separate from its body:
+          the body still has to go behind the head for collars to tuck in. */}
+      <g key={"arms-" + look.skin}>
+        <line
+          className="av-arm-l"
+          x1={ARM.left.x1}
+          y1={ARM.left.y1}
+          x2={ARM.left.x2}
+          y2={ARM.left.y2}
+          stroke={look.skin}
+          strokeWidth={ARM.width}
+          strokeLinecap="round"
+        />
+        <line
+          className="av-arm-r"
+          x1={ARM.right.x1}
+          y1={ARM.right.y1}
+          x2={ARM.right.x2}
+          y2={ARM.right.y2}
+          stroke={look.skin}
+          strokeWidth={ARM.width}
+          strokeLinecap="round"
+        />
+      </g>
+
+      {look.topId && TOP_STYLES[look.topId]?.sleeves && (
+        <g key={"sl-" + look.topId + look.topColour} className={pop}>
+          {TOP_STYLES[look.topId].sleeves!({
+            colour: look.topColour,
+            skin: look.skin,
+            motif: null,
+            uid,
+          })}
         </g>
       )}
       </g>

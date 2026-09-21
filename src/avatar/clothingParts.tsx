@@ -65,163 +65,200 @@ const SLEEVE_W = ARM.width + 6;
 /** Every tie is the same navy: it has to read as a tie against any shirt colour she picks. */
 const TIE = "#2f3a6b";
 
-export const TOP_STYLES: Record<string, (p: TopProps) => ReactElement> = {
-  tshirt: (p) => (
-    <g>
-      {limb(along(ARM.left, ARM.shortSleeveEnd), SLEEVE_W, p.colour, "sl")}
-      {limb(along(ARM.right, ARM.shortSleeveEnd), SLEEVE_W, p.colour, "sr")}
-      <path d={TORSO.path} fill={p.colour} />
-      {collar(p.skin)}
-      {p.motif}
-    </g>
-  ),
+/**
+ * A top is drawn in two pieces, and the split is not cosmetic.
+ *
+ * The body must come before the head so collars and hoods tuck in behind it. The sleeves must
+ * come after it, or a hand raised to scratch an ear vanishes behind the hair. Sleeves cannot
+ * satisfy both while they are part of the same drawing, so they aren't.
+ */
+export interface TopStyle {
+  body: (p: TopProps) => ReactElement;
+  sleeves?: (p: TopProps) => ReactElement;
+}
 
-  tank: (p) => (
+/**
+ * Every sleeve in the wardrobe is the same shape — the arm, in fabric, for some fraction of
+ * its length — so they come from one description rather than being written out per garment.
+ */
+function sleevePair(reach: number, width: number): (p: TopProps) => ReactElement {
+  return (p) => (
     <g>
-      {/* Straps over the shoulders, then a scoop-necked body. Drawing the full torso and
-          painting skin back over the shoulders gave the character a second set of shoulders. */}
-      <rect x={76} y={150} width={11} height={34} rx={5.5} fill={p.colour} />
-      <rect x={113} y={150} width={11} height={34} rx={5.5} fill={p.colour} />
-      <path
-        d="M70,176 Q100,192 130,176 L128,244 C128,254 72,254 72,244 Z"
-        fill={p.colour}
-      />
-      {p.motif}
+      {limb(reach >= 1 ? ARM.left : along(ARM.left, reach), width, p.colour, "sl")}
+      {limb(reach >= 1 ? ARM.right : along(ARM.right, reach), width, p.colour, "sr")}
     </g>
-  ),
+  );
+}
 
-  hoodie: (p) => (
-    <g>
-      {/* Hood sits behind the head, which is drawn later, so it reads as a collar. */}
-      <path
-        d="M52,172 C44,128 68,106 100,106 C132,106 156,128 148,172 Q100,186 52,172 Z"
-        fill={shade(p.colour, -22)}
-      />
-      {limb(ARM.left, SLEEVE_W, p.colour, "sl")}
-      {limb(ARM.right, SLEEVE_W, p.colour, "sr")}
-      <path d={TORSO.path} fill={p.colour} />
-      <path
-        d="M74,206 h52 a6,6 0 0 1 6,7 l-4,17 a7,7 0 0 1 -7,6 h-42 a7,7 0 0 1 -7,-6 l-4,-17 a6,6 0 0 1 6,-7 z"
-        fill={shade(p.colour, -24)}
-      />
-      <path d="M92,156 l-3,26 M108,156 l3,26" stroke="#fffdfa" strokeWidth={3.5} strokeLinecap="round" />
-      <circle cx={89} cy={184} r={3.4} fill="#fffdfa" />
-      <circle cx={111} cy={184} r={3.4} fill="#fffdfa" />
-      {collar(p.skin)}
-    </g>
-  ),
+export const TOP_STYLES: Record<string, TopStyle> = {
 
-  stripes: (p) => (
-    <g>
-      <defs>
-        <clipPath id={"torso-" + p.uid}>
-          <path d={TORSO.path} />
-        </clipPath>
-      </defs>
-      {limb(ARM.left, SLEEVE_W, p.colour, "sl")}
-      {limb(ARM.right, SLEEVE_W, p.colour, "sr")}
-      <path d={TORSO.path} fill={p.colour} />
-      <g clipPath={"url(#torso-" + p.uid + ")"}>
-        {[164, 186, 208, 230].map((y) => (
-          <rect key={y} x={60} y={y} width={80} height={11} fill="#fffdfa" opacity={0.92} />
-        ))}
+  tshirt: {
+    sleeves: sleevePair(ARM.shortSleeveEnd, SLEEVE_W),
+    body: (p) => (
+      <g>
+        <path d={TORSO.path} fill={p.colour} />
+        {collar(p.skin)}
+        {p.motif}
       </g>
-      {collar(p.skin)}
-    </g>
-  ),
+    ),
+  },
 
-  dress: (p) => (
-    <g>
-      {limb(along(ARM.left, 0.3), SLEEVE_W, p.colour, "sl")}
-      {limb(along(ARM.right, 0.3), SLEEVE_W, p.colour, "sr")}
-      <path
-        d="M67,158 C67,146 133,146 133,158 L130,234 L154,304 Q100,324 46,304 L70,234 Z"
-        fill={p.colour}
-      />
-      <path d="M70,234 L130,234 L132,245 L68,245 Z" fill={shade(p.colour, -28)} />
-      {collar(p.skin)}
-      {p.motif}
-    </g>
-  ),
-
-  partyDress: (p) => (
-    <g>
-      <path
-        d="M67,158 C67,146 133,146 133,158 L129,230 L162,306 Q148,300 138,310 Q124,300 112,310 Q100,300 88,310 Q76,300 62,310 Q52,300 38,306 L71,230 Z"
-        fill={p.colour}
-      />
-      <path d="M71,230 L129,230 L131,242 L69,242 Z" fill="#ffd23f" />
-      <circle cx={100} cy={236} r={7} fill="#ffe89a" />
-      {[
-        [78, 268],
-        [122, 272],
-        [100, 290],
-        [60, 292],
-        [140, 288],
-      ].map(([cx, cy], i) => (
+  tank: {
+    body: (p) => (
+      <g>
+        {/* Straps over the shoulders, then a scoop-necked body. Drawing the full torso and
+            painting skin back over the shoulders gave the character a second set of shoulders. */}
+        <rect x={76} y={150} width={11} height={34} rx={5.5} fill={p.colour} />
+        <rect x={113} y={150} width={11} height={34} rx={5.5} fill={p.colour} />
         <path
-          key={i}
-          d={
-            "M" + cx + "," + (cy - 6) +
-            " l1.8,4.2 4.2,1.8 -4.2,1.8 -1.8,4.2 -1.8,-4.2 -4.2,-1.8 4.2,-1.8 z"
-          }
-          fill="#fffdfa"
-          opacity={0.85}
+          d="M70,176 Q100,192 130,176 L128,244 C128,254 72,254 72,244 Z"
+          fill={p.colour}
         />
-      ))}
-      {collar(p.skin)}
-    </g>
-  ),
+        {p.motif}
+      </g>
+    ),
+  },
+
+  hoodie: {
+    sleeves: sleevePair(1, SLEEVE_W),
+    body: (p) => (
+      <g>
+        {/* Hood sits behind the head, which is drawn later, so it reads as a collar. */}
+        <path
+          d="M52,172 C44,128 68,106 100,106 C132,106 156,128 148,172 Q100,186 52,172 Z"
+          fill={shade(p.colour, -22)}
+        />
+        <path d={TORSO.path} fill={p.colour} />
+        <path
+          d="M74,206 h52 a6,6 0 0 1 6,7 l-4,17 a7,7 0 0 1 -7,6 h-42 a7,7 0 0 1 -7,-6 l-4,-17 a6,6 0 0 1 6,-7 z"
+          fill={shade(p.colour, -24)}
+        />
+        <path d="M92,156 l-3,26 M108,156 l3,26" stroke="#fffdfa" strokeWidth={3.5} strokeLinecap="round" />
+        <circle cx={89} cy={184} r={3.4} fill="#fffdfa" />
+        <circle cx={111} cy={184} r={3.4} fill="#fffdfa" />
+        {collar(p.skin)}
+      </g>
+    ),
+  },
+
+  stripes: {
+    sleeves: sleevePair(1, SLEEVE_W),
+    body: (p) => (
+      <g>
+        <defs>
+          <clipPath id={"torso-" + p.uid}>
+            <path d={TORSO.path} />
+          </clipPath>
+        </defs>
+        <path d={TORSO.path} fill={p.colour} />
+        <g clipPath={"url(#torso-" + p.uid + ")"}>
+          {[164, 186, 208, 230].map((y) => (
+            <rect key={y} x={60} y={y} width={80} height={11} fill="#fffdfa" opacity={0.92} />
+          ))}
+        </g>
+        {collar(p.skin)}
+      </g>
+    ),
+  },
+
+  dress: {
+    sleeves: sleevePair(0.3, SLEEVE_W),
+    body: (p) => (
+      <g>
+        <path
+          d="M67,158 C67,146 133,146 133,158 L130,234 L154,304 Q100,324 46,304 L70,234 Z"
+          fill={p.colour}
+        />
+        <path d="M70,234 L130,234 L132,245 L68,245 Z" fill={shade(p.colour, -28)} />
+        {collar(p.skin)}
+        {p.motif}
+      </g>
+    ),
+  },
+
+  partyDress: {
+    body: (p) => (
+      <g>
+        <path
+          d="M67,158 C67,146 133,146 133,158 L129,230 L162,306 Q148,300 138,310 Q124,300 112,310 Q100,300 88,310 Q76,300 62,310 Q52,300 38,306 L71,230 Z"
+          fill={p.colour}
+        />
+        <path d="M71,230 L129,230 L131,242 L69,242 Z" fill="#ffd23f" />
+        <circle cx={100} cy={236} r={7} fill="#ffe89a" />
+        {[
+          [78, 268],
+          [122, 272],
+          [100, 290],
+          [60, 292],
+          [140, 288],
+        ].map(([cx, cy], i) => (
+          <path
+            key={i}
+            d={
+              "M" + cx + "," + (cy - 6) +
+              " l1.8,4.2 4.2,1.8 -4.2,1.8 -1.8,4.2 -1.8,-4.2 -4.2,-1.8 4.2,-1.8 z"
+            }
+            fill="#fffdfa"
+            opacity={0.85}
+          />
+        ))}
+        {collar(p.skin)}
+      </g>
+    ),
+  },
 
   /** Soft and floaty: a yoke across the shoulders and a pointed collar sitting on it. */
-  blouse: (p) => (
-    <g>
-      {limb(along(ARM.left, 0.6), SLEEVE_W, p.colour, "sl")}
-      {limb(along(ARM.right, 0.6), SLEEVE_W, p.colour, "sr")}
-      <path d={TORSO.path} fill={p.colour} />
-      <path d="M67,158 C67,146 133,146 133,158 L131,173 Q100,183 69,173 Z" fill={shade(p.colour, 18)} />
-      {collar(p.skin)}
-      <path d="M88,148 L100,171 L92,150 Z" fill={shade(p.colour, 30)} />
-      <path d="M112,148 L100,171 L108,150 Z" fill={shade(p.colour, 30)} />
-      {p.motif}
-    </g>
-  ),
+  blouse: {
+    sleeves: sleevePair(0.6, SLEEVE_W),
+    body: (p) => (
+      <g>
+        <path d={TORSO.path} fill={p.colour} />
+        <path d="M67,158 C67,146 133,146 133,158 L131,173 Q100,183 69,173 Z" fill={shade(p.colour, 18)} />
+        {collar(p.skin)}
+        <path d="M88,148 L100,171 L92,150 Z" fill={shade(p.colour, 30)} />
+        <path d="M112,148 L100,171 L108,150 Z" fill={shade(p.colour, 30)} />
+        {p.motif}
+      </g>
+    ),
+  },
 
   /** A proper shirt, buttoned to the top, with a tie down the front. */
-  shirtTie: (p) => (
-    <g>
-      {limb(ARM.left, SLEEVE_W, p.colour, "sl")}
-      {limb(ARM.right, SLEEVE_W, p.colour, "sr")}
-      <path d={TORSO.path} fill={p.colour} />
-      <rect x={95} y={158} width={10} height={88} fill={shade(p.colour, -14)} />
-      {collar(p.skin)}
-      <path d="M86,147 L100,167 L92,149 Z" fill={shade(p.colour, -24)} />
-      <path d="M114,147 L100,167 L108,149 Z" fill={shade(p.colour, -24)} />
-      <path d="M100,164 l-7,8 l7,10 l7,-10 z" fill={TIE} />
-      <path d="M94,181 l6,-7 l6,7 l-3,44 q-3,6 -6,0 z" fill={TIE} />
-      <path d="M95,194 l10,9 M95,209 l10,9" stroke={shade(TIE, 46)} strokeWidth={3} strokeLinecap="round" />
-    </g>
-  ),
+  shirtTie: {
+    sleeves: sleevePair(1, SLEEVE_W),
+    body: (p) => (
+      <g>
+        <path d={TORSO.path} fill={p.colour} />
+        <rect x={95} y={158} width={10} height={88} fill={shade(p.colour, -14)} />
+        {collar(p.skin)}
+        <path d="M86,147 L100,167 L92,149 Z" fill={shade(p.colour, -24)} />
+        <path d="M114,147 L100,167 L108,149 Z" fill={shade(p.colour, -24)} />
+        <path d="M100,164 l-7,8 l7,10 l7,-10 z" fill={TIE} />
+        <path d="M94,181 l6,-7 l6,7 l-3,44 q-3,6 -6,0 z" fill={TIE} />
+        <path d="M95,194 l10,9 M95,209 l10,9" stroke={shade(TIE, 46)} strokeWidth={3} strokeLinecap="round" />
+      </g>
+    ),
+  },
 
   /** A suit jacket worn open, so the shirt and tie show in the V between the lapels. */
-  jacket: (p) => (
-    <g>
-      {limb(ARM.left, SLEEVE_W + 3, p.colour, "sl")}
-      {limb(ARM.right, SLEEVE_W + 3, p.colour, "sr")}
-      <path d={TORSO.path} fill={p.colour} />
-      {/* The shirt has to be wide enough to still read as white once the lapels are folded
-          back over it and the tie is laid down the middle of what's left. */}
-      <path d="M82,152 L100,216 L118,152 Z" fill="#fffdfa" />
-      <path d="M100,170 l-6,7 l6,9 l6,-9 z" fill={TIE} />
-      <path d="M95,185 l5,-6 l5,6 l-2,26 q-3,5 -6,0 z" fill={TIE} />
-      <path d="M78,146 L100,213 L88,151 Z" fill={shade(p.colour, 24)} />
-      <path d="M122,146 L100,213 L112,151 Z" fill={shade(p.colour, 24)} />
-      <circle cx={105} cy={226} r={3.2} fill={shade(p.colour, 36)} />
-      <rect x={76} y={218} width={17} height={4} rx={2} fill={shade(p.colour, -26)} />
-      <rect x={107} y={218} width={17} height={4} rx={2} fill={shade(p.colour, -26)} />
-      {collar(p.skin)}
-    </g>
-  ),
+  jacket: {
+    sleeves: sleevePair(1, SLEEVE_W + 3),
+    body: (p) => (
+      <g>
+        <path d={TORSO.path} fill={p.colour} />
+        {/* The shirt has to be wide enough to still read as white once the lapels are folded
+            back over it and the tie is laid down the middle of what's left. */}
+        <path d="M82,152 L100,216 L118,152 Z" fill="#fffdfa" />
+        <path d="M100,170 l-6,7 l6,9 l6,-9 z" fill={TIE} />
+        <path d="M95,185 l5,-6 l5,6 l-2,26 q-3,5 -6,0 z" fill={TIE} />
+        <path d="M78,146 L100,213 L88,151 Z" fill={shade(p.colour, 24)} />
+        <path d="M122,146 L100,213 L112,151 Z" fill={shade(p.colour, 24)} />
+        <circle cx={105} cy={226} r={3.2} fill={shade(p.colour, 36)} />
+        <rect x={76} y={218} width={17} height={4} rx={2} fill={shade(p.colour, -26)} />
+        <rect x={107} y={218} width={17} height={4} rx={2} fill={shade(p.colour, -26)} />
+        {collar(p.skin)}
+      </g>
+    ),
+  },
 };
 
 /** Tops that cover the legs, so the bottoms slot is hidden while they are worn. */

@@ -314,3 +314,44 @@ export const DEFAULT_LOOK: AvatarLook = {
   jewelsId: null,
   jewelsColour: ACCESSORY_COLOURS[0],
 };
+
+function pick<T>(list: readonly T[]): T {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function maybe(chance: number, value: string): string | null {
+  return Math.random() < chance ? value : null;
+}
+
+export function randomLook(): AvatarLook {
+  const byId = (id: CategoryId) => CATEGORIES.find((c) => c.id === id)!.items;
+  const topColour = pick(FABRIC_COLOURS);
+  // Same colour top and bottom merges into one shapeless block.
+  const bottomColour = pick(FABRIC_COLOURS.filter((c) => c !== topColour));
+  return {
+    skin: pick(SKIN_TONES),
+    hairId: pick(byId("hair")).id,
+    hairColour: pick(HAIR_COLOURS),
+    eyesId: pick(byId("eyes")).id,
+    irisColour: pick(IRIS_COLOURS),
+    noseId: pick(byId("nose")).id,
+    mouthId: pick(byId("mouth")).id,
+    blushId: maybe(0.8, pick(byId("blush")).id),
+    blushColour: pick(MAKEUP_COLOURS),
+    topId: pick(byId("top")).id,
+    topColour,
+    motifId: maybe(0.7, pick(byId("motif")).id),
+    // A picture the same colour as the top it sits on would be invisible.
+    motifColour: pick(FABRIC_COLOURS.filter((c) => c !== topColour)),
+    bottomId: pick(byId("bottom")).id,
+    bottomColour,
+    shoesId: pick(byId("shoes")).id,
+    shoesColour: pick(FABRIC_COLOURS),
+    headId: maybe(0.5, pick(byId("head")).id),
+    headColour: pick(ACCESSORY_COLOURS),
+    glassesId: maybe(0.25, pick(byId("glasses")).id),
+    glassesColour: pick(ACCESSORY_COLOURS),
+    jewelsId: maybe(0.45, pick(byId("jewels")).id),
+    jewelsColour: pick(ACCESSORY_COLOURS),
+  };
+}

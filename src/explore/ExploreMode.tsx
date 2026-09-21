@@ -1275,7 +1275,7 @@ export function ExploreMode({
             👥 {characters.length}
           </button>
           <button
-            className="chip-btn"
+            className="chip-btn chip-mode"
             onClick={() => {
               playTap();
               onDesign();

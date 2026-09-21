@@ -1,17 +1,7 @@
 import { useState } from "react";
 import { Avatar } from "../avatar/Avatar";
 import { COVERS_LEGS } from "../avatar/clothingParts";
-import {
-  ACCESSORY_COLOURS,
-  CATEGORIES,
-  FABRIC_COLOURS,
-  HAIR_COLOURS,
-  IRIS_COLOURS,
-  MAKEUP_COLOURS,
-  SKIN_TONES,
-  type AvatarLook,
-  type CategoryId,
-} from "../data/wardrobe";
+import { CATEGORIES, type AvatarLook, type CategoryId } from "../data/wardrobe";
 import type { SavedCharacter } from "../lib/storage";
 import { playPop, playSparkle, playSwatch, playTap } from "../lib/sound";
 
@@ -148,47 +138,6 @@ function currentColour(look: AvatarLook, cat: CategoryId): string | null {
   }
 }
 
-function pick<T>(list: readonly T[]): T {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-function maybe(chance: number, value: string): string | null {
-  return Math.random() < chance ? value : null;
-}
-
-function randomLook(): AvatarLook {
-  const byId = (id: CategoryId) => CATEGORIES.find((c) => c.id === id)!.items;
-  const topColour = pick(FABRIC_COLOURS);
-  // Same colour top and bottom merges into one shapeless block.
-  const bottomColour = pick(FABRIC_COLOURS.filter((c) => c !== topColour));
-  return {
-    skin: pick(SKIN_TONES),
-    hairId: pick(byId("hair")).id,
-    hairColour: pick(HAIR_COLOURS),
-    eyesId: pick(byId("eyes")).id,
-    irisColour: pick(IRIS_COLOURS),
-    noseId: pick(byId("nose")).id,
-    mouthId: pick(byId("mouth")).id,
-    blushId: maybe(0.8, pick(byId("blush")).id),
-    blushColour: pick(MAKEUP_COLOURS),
-    topId: pick(byId("top")).id,
-    topColour,
-    motifId: maybe(0.7, pick(byId("motif")).id),
-    // A picture the same colour as the top it sits on would be invisible.
-    motifColour: pick(FABRIC_COLOURS.filter((c) => c !== topColour)),
-    bottomId: pick(byId("bottom")).id,
-    bottomColour,
-    shoesId: pick(byId("shoes")).id,
-    shoesColour: pick(FABRIC_COLOURS),
-    headId: maybe(0.5, pick(byId("head")).id),
-    headColour: pick(ACCESSORY_COLOURS),
-    glassesId: maybe(0.25, pick(byId("glasses")).id),
-    glassesColour: pick(ACCESSORY_COLOURS),
-    jewelsId: maybe(0.45, pick(byId("jewels")).id),
-    jewelsColour: pick(ACCESSORY_COLOURS),
-  };
-}
-
 export function DesignMode({
   look,
   onChange,
@@ -218,36 +167,26 @@ export function DesignMode({
   return (
     <div className="screen">
       <header className="topbar">
-        {/* "Surprise me" is deliberately NOT where explore's "Dress up" button is. Tapping
-            that spot twice — once to come here, once more out of habit — would have thrown
-            away a character she had just spent ten minutes on. The same spot in both modes
-            now does the same harmless thing: swap modes. */}
-        <button
-          className="chip-btn chip-ghost"
-          onClick={() => {
-            onChange(randomLook());
-            playPop();
-          }}
-        >
-          🎲 Surprise me
-        </button>
+        {/* Inert text, exactly like the room name in explore mode — so the left of the bar
+            never does anything, in either mode. */}
+        <h1 className="logo">
+          Dress Up <span>World</span>
+        </h1>
 
         <span className="version">v{__APP_VERSION__}</span>
 
-        {/* Saves on the way out rather than discarding. A child who has just dressed someone
-            up and taps the obvious button should not lose it, and with nothing changed it is
-            simply a way back to the rooms. */}
-        {characters.length > 0 && (
-          <button
-            className="chip-btn"
-            onClick={() => {
-              onSave();
-              playSparkle();
-            }}
-          >
-            🏠 Play
-          </button>
-        )}
+        {/* The same spot as explore's "Dress up", doing the mirror of it. Saves on the way
+            out rather than discarding: a child who has just dressed someone up and taps the
+            obvious button should not lose it. */}
+        <button
+          className="chip-btn chip-mode"
+          onClick={() => {
+            onSave();
+            playSparkle();
+          }}
+        >
+          🏠 Play
+        </button>
       </header>
 
       <div className="stage">
@@ -381,15 +320,6 @@ export function DesignMode({
             }}
           >
             {showCharacters ? "▾ Hide" : "👥 Characters (" + characters.length + ")"}
-          </button>
-          <button
-            className="btn-primary"
-            onClick={() => {
-              onSave();
-              playSparkle();
-            }}
-          >
-            {editingId ? "Save & play ▶" : "Save new one ▶"}
           </button>
         </div>
       </div>

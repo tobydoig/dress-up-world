@@ -2086,14 +2086,16 @@ button {
  * Both arms up and in, making a cradle. Carrying replaces the idle fidgets rather than
  * running alongside them — an arm that wanders off to scratch an ear drops the baby.
  */
+/* Across the body rather than out to the sides: one forearm under the baby and the other
+   over it, which is how anybody actually holds one. */
 .av-carrying .av-arm-l {
   transform-box: fill-box;
   transform-origin: 100% 0%;
-  transform: rotate(74deg);
+  transform: rotate(-96deg);
 }
 
 .av-carrying .av-arm-r {
   transform-box: fill-box;
   transform-origin: 0% 0%;
-  transform: rotate(-70deg);
+  transform: rotate(88deg);
 }

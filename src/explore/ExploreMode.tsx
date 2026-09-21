@@ -111,16 +111,33 @@ const STACK_LIFT = 110;
  * The character's anchor is their feet, and lying rotates them about it, so a lying anchor sits
  * at the FOOT of the bed with the body extending back towards the pillow.
  */
-const SEATS: Record<
-  string,
-  { zoneX: number; zoneY: number; x: number; y: number; pose: AvatarPose }
-> = {
-  chairLeft: { zoneX: 124, zoneY: 328, x: 124, y: 324, pose: "sit" },
-  chairRight: { zoneX: 288, zoneY: 328, x: 288, y: 324, pose: "sit" },
-  bed: { zoneX: 286, zoneY: 330, x: 369, y: 220, pose: "lie" },
-  // The bottom bunk only. The top one is out of reach of a dragged character, and a figure
-  // lying up there would be half off the top of the room anyway.
-  bunkBed: { zoneX: 300, zoneY: 282, x: 372, y: 276, pose: "lie" },
+/**
+ * Somewhere to sit or lie, as a list per piece: bunk beds have two, and anything else has
+ * one. A spot is remembered by its number alongside the piece, because "on the bunk bed" is
+ * no longer an answer to where somebody is.
+ */
+interface Spot {
+  zoneX: number;
+  zoneY: number;
+  x: number;
+  y: number;
+  pose: AvatarPose;
+}
+
+const SEATS: Record<string, Spot[]> = {
+  chairLeft: [{ zoneX: 124, zoneY: 328, x: 124, y: 324, pose: "sit" }],
+  chairRight: [{ zoneX: 288, zoneY: 328, x: 288, y: 324, pose: "sit" }],
+  bed: [{ zoneX: 286, zoneY: 330, x: 369, y: 220, pose: "lie" }],
+  /*
+   * Both zones are at floor level, because a character cannot be dragged any higher than
+   * that — so the top bunk is reached by dropping somebody at the foot of the LADDER, and
+   * the bottom one by dropping them in front of the bed. Far enough apart (98) that the
+   * nearest-wins search can't confuse them.
+   */
+  bunkBed: [
+    { zoneX: 270, zoneY: 330, x: 392, y: 282, pose: "lie" },
+    { zoneX: 368, zoneY: 330, x: 392, y: 196, pose: "lie" },
+  ],
 };
 
 /**
@@ -131,23 +148,32 @@ const SEATS: Record<
  */
 function seatPlaceAt(
   id: string,
+  spot: number,
   facing: number,
   dx: number,
   dy: number
 ): { x: number; y: number; pose: AvatarPose } | null {
-  const seat = SEATS[id];
+  const seat = SEATS[id]?.[spot];
   if (!seat) return null;
   return { x: seat.x + dx + seatShift(id, facing), y: seat.y + dy, pose: seat.pose };
 }
 
-function seatPlace(item: PlacedFurniture): { x: number; y: number; pose: AvatarPose } | null {
-  return seatPlaceAt(item.id, item.facing, item.dx, item.dy);
+function seatPlace(
+  item: PlacedFurniture,
+  spot: number
+): { x: number; y: number; pose: AvatarPose } | null {
+  return seatPlaceAt(item.id, spot, item.facing, item.dx, item.dy);
 }
 
-function seatZone(item: PlacedFurniture): { x: number; y: number } | null {
-  const seat = SEATS[item.id];
+function seatZone(item: PlacedFurniture, spot: number): { x: number; y: number } | null {
+  const seat = SEATS[item.id]?.[spot];
   if (!seat) return null;
   return { x: seat.zoneX + item.dx + seatShift(item.id, item.facing), y: seat.zoneY + item.dy };
+}
+
+/** Every spot a piece offers, by number. */
+function seatSpots(id: string): number[] {
+  return (SEATS[id] ?? []).map((_, i) => i);
 }
 
 /** How close the character has to be dropped for it to count as sitting on something. */
@@ -269,9 +295,7 @@ interface DragState {
   /** The wrapper holding what is inside an open container, which travels with it. */
 
   /** Set when someone is sitting on the dragged piece and has to be carried along. */
-  rider: { node: SVGGElement; id: string; facing: number; who: string } | null;
-  /** A baby in the dragged character's arms, which has to travel with them. */
-  carried: SVGGElement | null;
+  riders: Array<{ node: SVGGElement; id: string; facing: number; who: string; spot: number }>;
   /** Where the drag has got to: a piece's offset, or the character's position. */
   x: number;
   y: number;
@@ -302,7 +326,13 @@ const AVATAR_SCALE = 0.47;
  * of an arm, at about chest height and a little to one side. How near she has to be dropped
  * for it to count as being picked up, too, which is generous: she is aiming at a person.
  */
-const CARRY = { dx: 20, dy: -96, scale: 0.72, snap: 92 };
+const CARRY = {
+  /** How near a baby has to be dropped to somebody for it to count. Generous: she is
+   *  aiming at a person, not at a pair of arms. */
+  snap: 92,
+  /** Where it rides, in the carrier's own coordinates — chest height, a little to one side. */
+  transform: "translate(140 178) scale(0.72) translate(-100 -380)",
+};
 
 /**
  * Breathing and blinking start the moment the element appears, so three characters who came
@@ -320,11 +350,11 @@ function phaseOf(index: number, count: number): { breathe: number; blink: number
 }
 
 
-function characterTransform(x: number, y: number, pose: AvatarPose, scale = 1): string {
+function characterTransform(x: number, y: number, pose: AvatarPose): string {
   return (
     "translate(" + x + " " + y + ")" +
     (pose === "lie" ? " rotate(-90)" : "") +
-    " scale(" + AVATAR_SCALE * scale + ") translate(-100 -380)"
+    " scale(" + AVATAR_SCALE + ") translate(-100 -380)"
   );
 }
 
@@ -468,8 +498,8 @@ const Character = memo(function Character({
   uid,
   x,
   y,
-  scale,
   rocking,
+  carried,
   pose,
   phase,
   chewing,
@@ -484,10 +514,10 @@ const Character = memo(function Character({
   x: number;
   y: number;
   pose: AvatarPose;
-  /** Smaller while carried, so a baby in arms isn't the size of one on the floor. */
-  scale: number;
   /** Carrying a baby: sway on the spot, and leave the ordinary fidgets alone. */
   rocking: boolean;
+  /** The baby in their arms, drawn inside them so it moves with everything they do. */
+  carried: ReactElement | null;
   /** How far into each of the two idle loops this one starts. See `phaseOf`. */
   phase: { breathe: number; blink: number };
   chewing: boolean;
@@ -499,7 +529,7 @@ const Character = memo(function Character({
     <g
       className={"draggable character" + (dragging ? " is-dragging" : "")}
       data-avatar={id}
-      transform={characterTransform(x, y, pose, scale)}
+      transform={characterTransform(x, y, pose)}
       style={
         {
           ["--phase-breathe"]: -phase.breathe.toFixed(2) + "s",
@@ -522,6 +552,7 @@ const Character = memo(function Character({
             chewing={chewing}
             mouthOpen={mouthOpen}
             carrying={rocking}
+            carried={carried}
           />
         )}
       </g>
@@ -757,7 +788,7 @@ export function ExploreMode({
     id: string,
     x: number,
     y: number,
-    settle?: { pose: AvatarPose; seat: string | null; heldBy?: string | null }
+    settle?: { pose: AvatarPose; seat: string | null; seatSpot?: number; heldBy?: string | null }
   ) => void;
   onTidyUp: () => void;
   onCycleTime: () => void;
@@ -894,12 +925,6 @@ export function ExploreMode({
   function applyDrag(drag: DragState) {
     if (drag.target.kind === "avatar") {
       drag.node.setAttribute("transform", characterTransform(drag.x, drag.y, drag.pose));
-      // Whoever is being carried rides along. Without this the baby stayed where the
-      // carrier had been standing and only caught up once the drag was over.
-      drag.carried?.setAttribute(
-        "transform",
-        characterTransform(drag.x + CARRY.dx, drag.y + CARRY.dy, "stand", CARRY.scale)
-      );
       return;
     }
     const placed = pieceTransform(drag.x, drag.y);
@@ -910,10 +935,10 @@ export function ExploreMode({
     // exist yet when the drag begins and React replaces others as it goes — a reference
     // kept across that is written to long after it has left the document.
     for (const layer of followersOf(drag.target.id)) layer.setAttribute("transform", placed);
-    if (drag.rider) {
-      const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
+    for (const rider of drag.riders) {
+      const place = seatPlaceAt(rider.id, rider.spot, rider.facing, drag.x, drag.y);
       if (place) {
-        drag.rider.node.setAttribute("transform", characterTransform(place.x, place.y, place.pose));
+        rider.node.setAttribute("transform", characterTransform(place.x, place.y, place.pose));
       }
     }
   }
@@ -1014,26 +1039,23 @@ export function ExploreMode({
       }
     }
 
-    let rider: DragState["rider"] = null;
-    let carried: SVGGElement | null = null;
-    if (target.kind === "avatar") {
-      const baby = babyOf(target.id);
-      carried = baby
-        ? svgRef.current?.querySelector<SVGGElement>(
-            'g.character[data-avatar="' + baby.id + '"]'
-          ) ?? null
-        : null;
-    }
+    const riders: DragState["riders"] = [];
     if (target.kind === "furniture") {
       const svg = svgRef.current;
       const current = roomStateRef.current;
-      const who = riderOf(target.id);
-      if (who) {
+      for (const member of ridersOf(target.id)) {
+        const who = member.id;
         const riderNode =
           svg?.querySelector<SVGGElement>('g.character[data-avatar="' + who + '"]') ?? null;
         const item = current.items.find((i) => i.id === target.id);
         if (riderNode && item) {
-          rider = { node: riderNode, id: target.id, facing: item.facing, who };
+          riders.push({
+            node: riderNode,
+            id: target.id,
+            facing: item.facing,
+            who,
+            spot: member.place.seatSpot,
+          });
         }
       }
     }
@@ -1107,9 +1129,9 @@ export function ExploreMode({
         onMoveAvatar(drag.target.id, drag.x, drag.y);
       } else {
         onMoveFurniture(drag.target.id, drag.x, drag.y);
-        if (drag.rider) {
-          const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
-          if (place) onMoveAvatar(drag.rider.who, place.x, place.y);
+        for (const rider of drag.riders) {
+          const place = seatPlaceAt(rider.id, rider.spot, rider.facing, drag.x, drag.y);
+          if (place) onMoveAvatar(rider.who, place.x, place.y);
         }
       }
 
@@ -1149,8 +1171,7 @@ export function ExploreMode({
       scale,
       bounds,
       node,
-      rider,
-      carried,
+      riders,
       x: originX,
       y: originY,
       pose: (target.kind === "avatar" && placeOf(target.id)?.pose) || "stand",
@@ -1308,11 +1329,16 @@ export function ExploreMode({
     if (turns > 1) {
       const facing = (item.facing + 1) % turns;
       onUpdateFurniture(id, { facing });
-      // The seat moves when the chair turns, so whoever is on it has to move too.
-      const rider = riderOf(id);
-      if (rider) {
-        const place = seatPlace({ ...item, facing });
-        if (place) onMoveAvatar(rider, place.x, place.y, { pose: place.pose, seat: id });
+      // The seat moves when the chair turns, so everybody on it has to move too.
+      for (const rider of ridersOf(id)) {
+        const place = seatPlace({ ...item, facing }, rider.place.seatSpot);
+        if (place) {
+          onMoveAvatar(rider.id, place.x, place.y, {
+            pose: place.pose,
+            seat: id,
+            seatSpot: rider.place.seatSpot,
+          });
+        }
       }
       playTurn();
       return;
@@ -1321,38 +1347,58 @@ export function ExploreMode({
     playPop();
   }
 
-  /**
-   * Where a member is actually drawn. A carried baby is drawn on whoever has it rather than
-   * where it was last put down, so it travels with them — including while they are being
-   * dragged, which the post-render pass then keeps up with.
-   */
-  function placeOfMember(member: CastMember): { x: number; y: number } {
-    if (!member.place.heldBy) return member.place;
-    const carrier = cast.find((m) => m.id === member.place.heldBy);
-    if (!carrier) return member.place;
-    return { x: carrier.place.x + CARRY.dx, y: carrier.place.y + CARRY.dy };
-  }
-
-  /**
-   * What decides who is painted over whom. Normally how far down the room they stand, so
-   * whoever is nearest the front is in front. A carried baby is the exception: it is drawn
-   * at chest height, which would sort it behind the very person holding it, so it borrows
-   * their depth and takes the place just after them.
-   */
-  function depthOf(member: CastMember): number {
-    if (!member.place.heldBy) return member.place.y;
-    const carrier = cast.find((m) => m.id === member.place.heldBy);
-    return carrier ? carrier.place.y + 0.5 : member.place.y;
-  }
-
   /** The baby in somebody's arms, if they have one. */
   function babyOf(carrier: string): CastMember | undefined {
     return castRef.current.find((m) => m.kind === "baby" && m.place.heldBy === carrier);
   }
 
-  /** Who is sitting or lying on a given piece, if anyone. */
-  function riderOf(furnitureId: string): string | null {
-    return castRef.current.find((member) => member.place.seat === furnitureId)?.id ?? null;
+  function babyInArms(carrier: string): CastMember | undefined {
+    return cast.find((m) => m.kind === "baby" && m.place.heldBy === carrier);
+  }
+
+  /**
+   * The baby to draw inside a carrier, if there is one. Touching it puts it down — a drag
+   * would have to tear it out of one coordinate system and into another mid-gesture, and a
+   * tap says the same thing without any of that.
+   */
+  function carriedNode(carrier: string): ReactElement | null {
+    const baby = babyInArms(carrier);
+    if (!baby) return null;
+    return (
+      <g
+        className="draggable"
+        transform={CARRY.transform}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          putDown(baby.id);
+        }}
+      >
+        <BabyLayers look={baby.look} held />
+      </g>
+    );
+  }
+
+  /** Out of the arms and onto the floor beside whoever was holding. */
+  function putDown(babyId: string) {
+    const place = placeOf(babyId);
+    const carrier = castRef.current.find((m) => m.id === place?.heldBy);
+    const x = carrier ? carrier.place.x + 54 : place?.x ?? AVATAR_BOUNDS.minX;
+    const y = carrier ? carrier.place.y : place?.y ?? AVATAR_BOUNDS.maxY;
+    onMoveAvatar(babyId, x, y, { pose: "stand", seat: null, heldBy: null });
+    playPop();
+  }
+
+  /** Who is in a given spot on a given piece, if anyone. */
+  function riderOf(furnitureId: string, spot: number): string | null {
+    return (
+      castRef.current.find((m) => m.place.seat === furnitureId && m.place.seatSpot === spot)?.id ??
+      null
+    );
+  }
+
+  /** Everybody on a piece, whichever of its spots they are in. */
+  function ridersOf(furnitureId: string): CastMember[] {
+    return castRef.current.filter((m) => m.place.seat === furnitureId);
   }
 
   /** After a character is dropped, sit or lie them on whatever they landed on. */
@@ -1394,26 +1440,28 @@ export function ExploreMode({
       return;
     }
 
-    let best: { id: string; x: number; y: number; pose: AvatarPose } | null = null;
+    let best: { id: string; spot: number; x: number; y: number; pose: AvatarPose } | null = null;
     let bestDistance = SEAT_SNAP;
 
     for (const item of current.items) {
-      const zone = seatZone(item);
-      const place = seatPlace(item);
-      if (!zone || !place) continue;
-      // One to a chair. Two characters in the same seat is a single blurred character, and
-      // dragging the chair afterwards could only ever take one of them with it.
-      const taken = riderOf(item.id);
-      if (taken !== null && taken !== who) continue;
-      const distance = Math.hypot(x - zone.x, y - zone.y);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = { id: item.id, ...place };
+      for (const spot of seatSpots(item.id)) {
+        const zone = seatZone(item, spot);
+        const place = seatPlace(item, spot);
+        if (!zone || !place) continue;
+        // One to a spot. Two characters in the same one is a single blurred character, and
+        // dragging the furniture afterwards could only ever take one of them with it.
+        const taken = riderOf(item.id, spot);
+        if (taken !== null && taken !== who) continue;
+        const distance = Math.hypot(x - zone.x, y - zone.y);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { id: item.id, spot, ...place };
+        }
       }
     }
 
     if (best) {
-      onMoveAvatar(who, best.x, best.y, { pose: best.pose, seat: best.id });
+      onMoveAvatar(who, best.x, best.y, { pose: best.pose, seat: best.id, seatSpot: best.spot });
       playSparkle();
     }
   }
@@ -1841,8 +1889,11 @@ export function ExploreMode({
 
             {/* Drawn back to front, so whoever is standing nearest the front of the room is
                 the one in front — and the one your finger lands on. */}
+            {/* A baby in somebody's arms isn't drawn here: it is handed to them below and
+                drawn inside them, so it inherits their every move. */}
             {[...cast]
-              .sort((a, b) => depthOf(a) - depthOf(b))
+              .filter((member) => !member.place.heldBy)
+              .sort((a, b) => a.place.y - b.place.y)
               .map((member, index) => (
                 <Character
                   key={member.id}
@@ -1850,10 +1901,10 @@ export function ExploreMode({
                   kind={member.kind}
                   look={member.look}
                   uid={"room-" + roomId + "-" + member.id}
-                  x={placeOfMember(member).x}
-                  y={placeOfMember(member).y}
-                  scale={member.place.heldBy ? CARRY.scale : 1}
-                  rocking={member.kind !== "baby" && cast.some((m) => m.place.heldBy === member.id)}
+                  x={member.place.x}
+                  y={member.place.y}
+                  rocking={!!babyInArms(member.id)}
+                  carried={carriedNode(member.id)}
                   pose={member.place.pose}
                   phase={phaseOf(index, cast.length)}
                   chewing={chewingId === member.id}

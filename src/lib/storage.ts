@@ -76,6 +76,8 @@ export interface Placement {
    * the character is suddenly sitting on nothing. Remembering the piece makes it explicit.
    */
   seat: string | null;
+  /** Which of that piece's spots: a bunk bed has two, everything else has one. */
+  seatSpot: number;
   /**
    * A baby only: whose arms it is in. Kept on the baby rather than on whoever is carrying
    * it, so a baby has exactly one answer to "where are you" however many arms are about.
@@ -129,6 +131,7 @@ export function castHome(index: number, count: number): Placement {
     y: AVATAR_HOME.y,
     pose: "stand",
     seat: null,
+    seatSpot: 0,
     heldBy: null,
   };
 }
@@ -267,6 +270,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
       y?: unknown;
       pose?: unknown;
       seat?: unknown;
+      seatSpot?: unknown;
       heldBy?: unknown;
     }): Placement => {
       const pose: AvatarPose = from.pose === "sit" || from.pose === "lie" ? from.pose : "stand";
@@ -276,6 +280,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
         pose,
         // A seat that is no longer in the room, or that nobody is on, is no seat at all.
         seat: pose !== "stand" && onFloor(from.seat) ? (from.seat as string) : null,
+        seatSpot: Math.max(0, Math.round(num(from.seatSpot, 0))),
         heldBy: typeof from.heldBy === "string" ? from.heldBy : null,
       };
     };

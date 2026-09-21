@@ -310,7 +310,7 @@ export function App() {
     id: string,
     x: number,
     y: number,
-    settle?: { pose: AvatarPose; seat: string | null; heldBy?: string | null }
+    settle?: { pose: AvatarPose; seat: string | null; seatSpot?: number; heldBy?: string | null }
   ) {
     updateRoom((room) => {
       const was = room.places[id];
@@ -323,6 +323,7 @@ export function App() {
             y,
             pose: settle ? settle.pose : was?.pose ?? "stand",
             seat: settle ? settle.seat : was?.seat ?? null,
+            seatSpot: settle ? settle.seatSpot ?? 0 : was?.seatSpot ?? 0,
             heldBy: settle ? settle.heldBy ?? null : was?.heldBy ?? null,
           },
         },

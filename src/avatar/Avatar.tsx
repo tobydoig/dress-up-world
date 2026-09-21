@@ -129,6 +129,7 @@ export function AvatarLayers({
   chewing = false,
   mouthOpen = false,
   carrying = false,
+  carried,
 }: {
   look: AvatarLook;
   uid?: string;
@@ -140,6 +141,13 @@ export function AvatarLayers({
   mouthOpen?: boolean;
   /** Both arms up and in, because there is a baby in them. */
   carrying?: boolean;
+  /**
+   * Whatever is being carried, drawn inside the figure rather than beside it. In here it
+   * inherits every transform the body has, so it sways with a fidget and travels with a
+   * drag without being told to — and it can be put between the two arms, which is the only
+   * way one of them gets to be underneath it.
+   */
+  carried?: ReactElement | null;
 }): ReactElement {
   const hair = HAIR_STYLES[look.hairId] ?? HAIR_STYLES.long;
   const eyes = EYE_STYLES[look.eyesId] ?? EYE_STYLES.round;
@@ -303,6 +311,28 @@ export function AvatarLayers({
             uid,
           })}
         </g>
+      )}
+
+      {carried && (
+        <>
+          {carried}
+          {/*
+           * The left arm a second time, over what is being held. One arm goes under a baby
+           * and the other over it, and with the baby drawn as one whole figure there is no
+           * way to slip a limb behind it except to draw that limb twice — once below, where
+           * it is hidden, and once here on top.
+           */}
+          <line
+            className="av-arm-l"
+            x1={ARM.left.x1}
+            y1={ARM.left.y1}
+            x2={ARM.left.x2}
+            y2={ARM.left.y2}
+            stroke={look.skin}
+            strokeWidth={ARM.width}
+            strokeLinecap="round"
+          />
+        </>
       )}
       </g>
     </g>

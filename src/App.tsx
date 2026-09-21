@@ -192,9 +192,14 @@ export function App() {
     setEditingId(id);
     setLook(chosen.look);
     setName(chosen.name);
-    // Deliberately does NOT bring them out. Who is in the room is hers to choose, the same
-    // way the furniture is; dressing somebody is not the same as asking for them on stage.
-    setSave((prev) => ({ ...prev, activeId: id }));
+    // Picking a face is how somebody gets into the room. Keeping the two apart was tidier
+    // and it left no way in from the flow people actually use — choose a character, press
+    // Play, and wonder why nothing changed. Getting them OUT is the sheet, or the bin.
+    setSave((prev) => ({
+      ...prev,
+      activeId: id,
+      inScene: prev.inScene.includes(id) ? prev.inScene : [...prev.inScene, id].slice(-MAX_CAST),
+    }));
   }
 
   function deleteCharacter(id: string) {

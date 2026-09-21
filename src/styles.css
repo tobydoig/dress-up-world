@@ -1166,14 +1166,17 @@ button {
 
 /* ---------- carrying a thing from the basket into a cupboard ---------- */
 
-/* Follows the fingertip. Fixed rather than absolute so it isn't clipped by the stage, and
-   pointer-events off so it never becomes the thing under the finger. */
+/* Rides above the fingertip rather than under it. Centred on the pointer it was covered by
+   the finger holding it on a phone, and it sat squarely over whatever it was being offered
+   to — which hid the character opening her mouth at the moment that feedback was the point.
+   Fixed rather than absolute so the stage can't clip it, and pointer-events off so it never
+   becomes the thing under the finger. */
 .held-thing {
   position: fixed;
   z-index: 40;
   width: 54px;
   height: 54px;
-  margin: -27px 0 0 -27px;
+  margin: -74px 0 0 -27px;
   padding: 4px;
   border-radius: 14px;
   background: rgba(20, 12, 44, 0.75);
@@ -1615,4 +1618,15 @@ button {
   .tray-slot.is-hint {
     animation: none;
   }
+}
+
+/* The character's face, lit up while food is being carried. Round rather than boxy, because
+   it is a head. */
+.mouth-zone {
+  stroke-dasharray: 7 6;
+}
+
+.mouth-zone.is-over {
+  fill: rgba(255, 210, 63, 0.3);
+  stroke-dasharray: none;
 }

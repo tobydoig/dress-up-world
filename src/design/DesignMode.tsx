@@ -198,7 +198,6 @@ export function DesignMode({
   onSelect,
   onDelete,
   onNew,
-  onBack,
 }: {
   look: AvatarLook;
   onChange: (next: AvatarLook) => void;
@@ -208,8 +207,6 @@ export function DesignMode({
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onNew: () => void;
-  /** Absent on the very first run, when there's no room to go back to yet. */
-  onBack: (() => void) | null;
 }) {
   const [activeId, setActiveId] = useState<CategoryId>("top");
   const [showCharacters, setShowCharacters] = useState(false);
@@ -221,24 +218,12 @@ export function DesignMode({
   return (
     <div className="screen">
       <header className="topbar">
-        {onBack ? (
-          <button
-            className="chip-btn chip-ghost"
-            onClick={() => {
-              playTap();
-              onBack();
-            }}
-          >
-            ‹ Back
-          </button>
-        ) : (
-          <h1 className="logo">
-            Dress Up <span>World</span>
-          </h1>
-        )}
-        <span className="version">v{__APP_VERSION__}</span>
+        {/* "Surprise me" is deliberately NOT where explore's "Dress up" button is. Tapping
+            that spot twice — once to come here, once more out of habit — would have thrown
+            away a character she had just spent ten minutes on. The same spot in both modes
+            now does the same harmless thing: swap modes. */}
         <button
-          className="chip-btn"
+          className="chip-btn chip-ghost"
           onClick={() => {
             onChange(randomLook());
             playPop();
@@ -246,6 +231,23 @@ export function DesignMode({
         >
           🎲 Surprise me
         </button>
+
+        <span className="version">v{__APP_VERSION__}</span>
+
+        {/* Saves on the way out rather than discarding. A child who has just dressed someone
+            up and taps the obvious button should not lose it, and with nothing changed it is
+            simply a way back to the rooms. */}
+        {characters.length > 0 && (
+          <button
+            className="chip-btn"
+            onClick={() => {
+              onSave();
+              playSparkle();
+            }}
+          >
+            🏠 Play
+          </button>
+        )}
       </header>
 
       <div className="stage">

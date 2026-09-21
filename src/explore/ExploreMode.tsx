@@ -27,6 +27,7 @@ import {
   CONTAINER_DROP,
   PLOTS,
   WATERING_CAN,
+  canWater,
   capacityOf,
   facingCount,
   isLit,
@@ -258,6 +259,8 @@ interface DragState {
   contents: SVGGElement | null;
   /** Set when someone is sitting on the dragged piece and has to be carried along. */
   rider: { node: SVGGElement; id: string; facing: number; who: string } | null;
+  /** The falling water, which only comes into being partway through a drag. */
+  water: SVGGElement | null;
   /** Where the drag has got to: a piece's offset, or the character's position. */
   x: number;
   y: number;
@@ -842,6 +845,15 @@ export function ExploreMode({
     const placed = pieceTransform(drag.x, drag.y);
     drag.node.setAttribute("transform", placed);
     drag.contents?.setAttribute("transform", placed);
+    // Looked up here rather than when the drag started, because the water doesn't exist
+    // until the can is over a plant, which happens mid-drag. Checking isConnected rather
+    // than just null matters: React replaces this node on some renders, and a reference
+    // held across that goes on being written to long after it has left the document —
+    // which showed up as the water following the can and then stopping dead.
+    if (!drag.water?.isConnected) {
+      drag.water = svgRef.current?.querySelector("[data-water]") ?? null;
+    }
+    drag.water?.setAttribute("transform", placed);
     if (drag.rider) {
       const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
       if (place) {
@@ -1075,6 +1087,7 @@ export function ExploreMode({
       node,
       contents,
       rider,
+      water: null,
       x: originX,
       y: originY,
       pose: (target.kind === "avatar" && placeOf(target.id)?.pose) || "stand",
@@ -1563,6 +1576,9 @@ export function ExploreMode({
 
   // One reading per render. Thirst is measured in hours, so nothing needs a ticking clock.
   const now = Date.now();
+  /* overPlot is only ever set over a bed with something growing in it. */
+  const pouringCan =
+    overPlot === null ? null : roomState.items.find((i) => i.id === WATERING_CAN) ?? null;
   /**
    * The bin takes furniture away for good, and takes a character off the stage — two
    * different promises, so it says which one it is making. It doesn't appear at all for the
@@ -1669,6 +1685,16 @@ export function ExploreMode({
 
             {/* Wall fittings, so every room has something on it even with nothing placed. */}
             <RoomFittings room={room} time={timeOfDay} />
+
+            {/* Before the beds on purpose: a drop is then hidden by the rim of the pot on
+                its way down, so the water reads as going into it rather than falling past
+                the front of it. It carries the can's own transform, and the drag keeps that
+                in step the same way it does the contents of a carried cupboard. */}
+            {pouringCan && (
+              <g data-water={WATERING_CAN} transform={pieceTransform(pouringCan.dx, pouringCan.dy)}>
+                {canWater()}
+              </g>
+            )}
 
             {roomState.items.map((item) => (
               <Piece

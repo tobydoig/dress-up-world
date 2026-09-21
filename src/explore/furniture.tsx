@@ -139,7 +139,12 @@ function glass(children: ReactElement): ReactElement {
  * garden below. Where the can ends up therefore does not depend on the transition running
  * at all; the transition only decides how quickly it gets there.
  */
-const CAN_LIFT = 30;
+/*
+ * High enough that the drops have somewhere to fall. The can is raised clear of the rim by
+ * the rim's own height again, so the gap between spout and soil is about as tall as the bed
+ * is — which is what makes the water visible before the rim hides it.
+ */
+const CAN_LIFT = 61;
 const CAN_TIP = 32;
 const CAN_PIVOT = "356 197";
 const CAN_EASE = { transition: "transform 0.25s ease-out" };
@@ -197,6 +202,37 @@ function screenStars(): ReactElement {
             style={{ animationDelay: (i * 0.24).toFixed(2) + "s" }}
           />
         </g>
+      ))}
+    </g>
+  );
+}
+
+/**
+ * The water, drawn apart from the can that is pouring it.
+ *
+ * It cannot live inside the can: the can is drawn after the beds, so its drops fell down the
+ * FRONT of the pot and the water looked like it was missing. As a layer of its own, put
+ * behind the beds, a drop is hidden by the rim on the way down and so reads as going in.
+ * It is given the can's own transform by whoever draws it, which is what keeps it under the
+ * spout while the can is being carried about.
+ *
+ * The coordinates are the can's, with the lift and the tip already worked in — this is where
+ * the rose actually is once the can is up and tipped over.
+ */
+export function canWater(): ReactElement {
+  return (
+    <g>
+      {[0, 1, 2].map((i) => (
+        <ellipse
+          key={i}
+          className="can-drop"
+          cx={381 + i * 4}
+          cy={160}
+          rx={1.8}
+          ry={2.7}
+          fill="#7fd4ff"
+          style={{ animationDelay: (i * 0.21).toFixed(2) + "s" }}
+        />
       ))}
     </g>
   );
@@ -1083,25 +1119,6 @@ export const FURNITURE: Record<string, FurnitureRender> = {
         <path d="M340,199 q9,-15 22,-2" stroke="#3fae5a" strokeWidth={4.5} fill="none" strokeLinecap="round" />
         <ellipse cx={391} cy={198} rx={6} ry={4.5} fill="#9be07a" transform="rotate(-32 391 198)" />
       </g>
-      {/* Outside the tip so they fall straight down rather than at the angle of the spout,
-          inside the lift so they rise with the can. Placed where the rose ends up once it
-          has tipped. */}
-      {c.pouring && (
-        <g>
-          {[0, 1, 2].map((i) => (
-            <ellipse
-              key={i}
-              className="can-drop"
-              cx={381 + i * 4}
-              cy={221}
-              rx={1.8}
-              ry={2.7}
-              fill="#7fd4ff"
-              style={{ animationDelay: (i * 0.21).toFixed(2) + "s" }}
-            />
-          ))}
-        </g>
-      )}
     </g>
   ),
 

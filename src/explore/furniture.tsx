@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { STALL_STOCK, THINGS } from "../data/things";
+import { CROPS, ripeness, type Crop } from "../data/growing";
 import type { Stroke } from "../lib/storage";
 
 /**
@@ -18,6 +19,13 @@ export interface FurnitureCtx {
   on: boolean;
   stored: string[];
   strokes: Stroke[];
+  /** A growing bed: what is in it and how many waterings it has had. */
+  planted: string | null;
+  stage: number;
+  /** Worked out by the room rather than here, so drawing stays a pure function of state. */
+  thirsty: boolean;
+  /** Which of its looks the piece is showing. What that means is up to the piece. */
+  mode: number;
 }
 
 export type FurnitureRender = (ctx: FurnitureCtx) => ReactElement;
@@ -29,6 +37,10 @@ export const CATALOGUE_CTX: FurnitureCtx = {
   on: true,
   stored: [],
   strokes: [],
+  planted: null,
+  stage: 0,
+  thirsty: false,
+  mode: 0,
 };
 
 /**
@@ -64,6 +76,17 @@ export const STALLS = new Set(Object.keys(STALL_STOCK));
 export const LAMPS = new Set(["deskLamp", "bedsideLamp", "floorLamp"]);
 
 /**
+ * Pieces with more than one look to cycle through on a tap, and how many. A screen is the
+ * obvious thing to fiddle with in a room, and it costs nothing to let her: nothing else in
+ * the game changes, so it's a knob that is safe to turn as many times as she likes.
+ */
+export const MODE_COUNT: Record<string, number> = { computer: 4 };
+
+export function modeCount(id: string): number {
+  return MODE_COUNT[id] ?? 1;
+}
+
+/**
  * Chairs are the one kind of thing with four hand-drawn views, so they genuinely turn on the
  * spot: side on, facing you, side on the other way, and seen from behind. There is no 3D here
  * and no projection maths — just four drawings, which is how sprite art has always done it.
@@ -89,6 +112,77 @@ export function facingCount(id: string): number {
   return 1;
 }
 
+/**
+ * The glass, as a nested svg. A nested svg clips its contents to its own box for free, which
+ * is what lets both of these scroll and fly off the edges without a clipPath — and without an
+ * id that would collide with the same computer drawn in the catalogue at the same time.
+ */
+function glass(children: ReactElement): ReactElement {
+  return (
+    <svg x={176} y={148} width={56} height={32}>
+      {children}
+    </svg>
+  );
+}
+
+/** Lines of something scrolling past, in the local coordinates of `glass`. */
+const CODE_ROWS: Array<[number, number, string]> = [
+  [0, 26, "#4fe0c0"],
+  [5, 34, "#7fb6ff"],
+  [5, 17, "#ffd23f"],
+  [11, 22, "#ff8fc0"],
+  [0, 30, "#4fe0c0"],
+  [5, 13, "#7fb6ff"],
+  [11, 25, "#ffd23f"],
+];
+
+const ROW_GAP = 7;
+
+function screenCode(): ReactElement {
+  // Two copies stacked, so when the first has scrolled exactly its own height out of the top
+  // the second is sitting where it started and the jump back is invisible.
+  const block = CODE_ROWS.length * ROW_GAP;
+  return glass(
+    <g className="screen-code" style={{ ["--screen-block" as string]: -block + "px" }}>
+      {[0, 1].map((copy) =>
+        CODE_ROWS.map(([indent, width, colour], i) => (
+          <rect
+            key={copy + ":" + i}
+            x={indent}
+            y={copy * block + i * ROW_GAP}
+            width={width}
+            height={3}
+            rx={1.5}
+            fill={colour}
+          />
+        ))
+      )}
+    </g>
+  );
+}
+
+/** Stars flying out of the middle of the screen, which is the screensaver everyone remembers. */
+const STAR_ANGLES = [8, 52, 96, 140, 184, 228, 272, 316, 30, 210];
+
+function screenStars(): ReactElement {
+  return glass(
+    <g transform="translate(28 16)">
+      {STAR_ANGLES.map((angle, i) => (
+        <g key={angle + ":" + i} transform={"rotate(" + angle + ")"}>
+          <circle
+            className="screen-star"
+            cx={0}
+            cy={0}
+            r={1.5}
+            fill="#fffdfa"
+            style={{ animationDelay: (i * 0.24).toFixed(2) + "s" }}
+          />
+        </g>
+      ))}
+    </g>
+  );
+}
+
 /** Where a lit piece pools its light, in authored coordinates. */
 export interface Glow {
   cx: number;
@@ -105,10 +199,13 @@ export const LIGHT_GLOW: Record<string, Glow> = {
   fridge: { cx: 359, cy: 174, rx: 52, ry: 62 },
 };
 
-/** Whether a placed piece is currently giving off light. */
-export function isLit(id: string, ctx: FurnitureCtx): boolean {
-  if (id === "fridge") return ctx.open;
-  return LAMPS.has(id) && ctx.on;
+/**
+ * Whether a placed piece is currently giving off light. Asks for only the two fields it
+ * actually reads, so a plain saved piece can be handed straight to it.
+ */
+export function isLit(id: string, state: { open: boolean; on: boolean }): boolean {
+  if (id === "fridge") return state.open;
+  return LAMPS.has(id) && state.on;
 }
 
 /** Where the things inside an open container are stacked up. */
@@ -275,6 +372,104 @@ function chair(id: string, facing: number): ReactElement {
   const view =
     turn === 1 ? chairFront(base.colour) : turn === 3 ? chairBack(base.colour) : chairSide(base.colour);
   return <g transform={"translate(" + base.x + " 197) scale(" + mirror + " 1)"}>{view}</g>;
+}
+
+/* ---------------- the garden ---------------- */
+
+const PLOT_W = 78;
+/** The top of the soil. Everything growing is measured up from here. */
+const SOIL = 206;
+
+/** Where the beds are authored, which also gives each one its drop box. */
+export const PLOT_X: Record<string, number> = { plotOne: 6, plotTwo: 92, plotThree: 178 };
+
+export const PLOTS = new Set(Object.keys(PLOT_X));
+
+export const WATERING_CAN = "wateringCan";
+
+/**
+ * The whole bed, from the top of a fully grown tree down to the front of the soil — not just
+ * the earth. Once something is growing, the plant IS the bed as far as a child is concerned,
+ * and a box that only covered the soil meant aiming the can at the leaves hit nothing.
+ */
+function plotBox(x: number): { x: number; y: number; w: number; h: number } {
+  return { x: x - 6, y: 108, w: PLOT_W + 12, h: 124 };
+}
+
+export function plotDrop(id: string): { x: number; y: number; w: number; h: number } | null {
+  const x = PLOT_X[id];
+  return x === undefined ? null : plotBox(x);
+}
+
+/** A low crop: a stem and leaves that get bigger, with the crop itself on once it is ripe. */
+function bush(cx: number, grown: number, crop: Crop): ReactElement {
+  const h = 8 + grown * 30;
+  const leaf = 5 + grown * 8;
+  return (
+    <g>
+      <path d={"M" + cx + "," + SOIL + " v" + -h} stroke="#2f8c46" strokeWidth={3} strokeLinecap="round" />
+      <ellipse cx={cx - leaf} cy={SOIL - h * 0.5} rx={leaf} ry={leaf * 0.6} fill="#3fae5a" />
+      <ellipse cx={cx + leaf} cy={SOIL - h * 0.72} rx={leaf * 0.9} ry={leaf * 0.55} fill="#5ed64a" />
+      {grown >= 1 && (
+        <g transform={"translate(" + cx + " " + (SOIL - h - 7) + ") scale(0.55)"}>
+          {THINGS[crop.crop].art()}
+        </g>
+      )}
+    </g>
+  );
+}
+
+/** A tree: a trunk that thickens and a canopy that spreads, fruiting at the end. */
+function tree(cx: number, grown: number, crop: Crop): ReactElement {
+  const h = 10 + grown * 52;
+  const canopy = 6 + grown * 22;
+  return (
+    <g>
+      <rect x={cx - 2 - grown * 2} y={SOIL - h} width={4 + grown * 4} height={h} rx={2} fill="#8d5a2c" />
+      <circle cx={cx} cy={SOIL - h} r={canopy} fill="#3fae5a" />
+      <circle cx={cx - canopy * 0.55} cy={SOIL - h + canopy * 0.35} r={canopy * 0.66} fill="#2f8c46" />
+      <circle cx={cx + canopy * 0.55} cy={SOIL - h + canopy * 0.28} r={canopy * 0.6} fill="#5ed64a" />
+      {grown >= 1 &&
+        ([-0.55, 0.45] as const).map((side) => (
+          <g
+            key={side}
+            transform={
+              "translate(" + (cx + canopy * side) + " " + (SOIL - h + canopy * 0.2) + ") scale(0.4)"
+            }
+          >
+            {THINGS[crop.crop].art()}
+          </g>
+        ))}
+    </g>
+  );
+}
+
+function plot(x: number, c: FurnitureCtx): ReactElement {
+  const crop = c.planted ? CROPS[c.planted] : null;
+  const grown = crop ? ripeness(crop, c.stage) : 0;
+  const cx = x + PLOT_W / 2;
+  return (
+    <g>
+      {/* The same box the can and the seeds are tested against, so what looks
+          tappable and what is tappable are the same thing. */}
+      {(() => { const b = plotBox(x); return hitPad(b.x, b.y, b.w, b.h); })()}
+      <path d={"M" + (x + 4) + ",232 L" + x + "," + SOIL + " h" + PLOT_W + " l-4,26 z"} fill="#6b4a2f" />
+      <ellipse cx={cx} cy={SOIL} rx={PLOT_W / 2} ry={6} fill="#7d5a3a" />
+      <rect x={x - 3} y={SOIL - 5} width={PLOT_W + 6} height={9} rx={4} fill="#8d5a2c" />
+
+      {!crop && <ellipse cx={cx} cy={SOIL - 3} rx={8} ry={4} fill="#5c3f28" />}
+      {crop && grown === 0 && <ellipse cx={cx} cy={SOIL - 4} rx={9} ry={5} fill="#5c3f28" />}
+      {crop && grown > 0 && (crop.kind === "tree" ? tree(cx, grown, crop) : bush(cx, grown, crop))}
+
+      {/* A drop, not a wilt. Nothing here suffers for being left — it just asks. */}
+      {crop && c.thirsty && (
+        <g className="wants-water" transform={"translate(" + cx + " 122)"}>
+          <path d="M0,-10 q8,10 0,16 q-8,-6 0,-16 z" fill="#3aa0ff" />
+          <ellipse cx={-2.5} cy={1} rx={1.8} ry={2.6} fill="#bfe6ff" />
+        </g>
+      )}
+    </g>
+  );
 }
 
 /* ---------------- market stalls ---------------- */
@@ -610,22 +805,38 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  computer: () => (
-    <g>
-      <rect x={168} y={140} width={72} height={48} rx={5} fill="#3a3a52" />
-      <rect x={173} y={145} width={62} height={38} rx={3} fill="#1d1f38" />
-      {/* The screen "runs" — a cheap loop of bars and a blinking cursor reads as a computer. */}
-      <g className="screen-glow">
-        <rect x={177} y={150} width={30} height={4} rx={2} fill="#4fe0c0" />
-        <rect x={177} y={158} width={44} height={4} rx={2} fill="#7fb6ff" />
-        <rect x={177} y={166} width={22} height={4} rx={2} fill="#ffd23f" />
-        <rect x={177} y={174} width={36} height={4} rx={2} fill="#ff8fc0" />
+  computer: (c) => {
+    const off = c.mode === 3;
+    return (
+      <g>
+        {hitPad(166, 138, 76, 62)}
+        <rect x={168} y={140} width={72} height={48} rx={5} fill="#3a3a52" />
+        <rect x={173} y={145} width={62} height={38} rx={3} fill={off ? "#15162a" : "#1d1f38"} />
+        {c.mode === 0 && (
+          <g>
+            {/* The look it has always had: a cheap loop of bars and a blinking cursor. */}
+            <g className="screen-glow">
+              <rect x={177} y={150} width={30} height={4} rx={2} fill="#4fe0c0" />
+              <rect x={177} y={158} width={44} height={4} rx={2} fill="#7fb6ff" />
+              <rect x={177} y={166} width={22} height={4} rx={2} fill="#ffd23f" />
+              <rect x={177} y={174} width={36} height={4} rx={2} fill="#ff8fc0" />
+            </g>
+            <rect className="screen-cursor" x={215} y={173} width={7} height={6} fill="#4fe0c0" />
+          </g>
+        )}
+        {c.mode === 1 && screenCode()}
+        {c.mode === 2 && screenStars()}
+        {off && (
+          /* Not quite black: a dark screen still catches the light from the window. */
+          <path d="M175,181 L233,151 L233,147 L175,177 Z" fill="#ffffff" opacity={0.05} />
+        )}
+        {/* The power light is the one part that says out loud whether it's on. */}
+        <circle cx={236} cy={185} r={1.8} fill={off ? "#4a3a3a" : "#5ed64a"} />
+        <rect x={196} y={188} width={16} height={8} fill="#3a3a52" />
+        <rect x={184} y={196} width={40} height={5} rx={2.5} fill="#2a2a40" />
       </g>
-      <rect className="screen-cursor" x={215} y={173} width={7} height={6} fill="#4fe0c0" />
-      <rect x={196} y={188} width={16} height={8} fill="#3a3a52" />
-      <rect x={184} y={196} width={40} height={5} rx={2.5} fill="#2a2a40" />
-    </g>
-  ),
+    );
+  },
 
   deskLamp: (c) => (
     <g>
@@ -821,6 +1032,45 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     <g>
       <ellipse cx={170} cy={296} rx={104} ry={30} fill="#2ed6b8" opacity={0.8} />
       <ellipse cx={170} cy={296} rx={70} ry={20} fill="#66e6cf" />
+    </g>
+  ),
+
+  // ---------------- garden ----------------
+  plotOne: (c) => plot(PLOT_X.plotOne, c),
+  plotTwo: (c) => plot(PLOT_X.plotTwo, c),
+  plotThree: (c) => plot(PLOT_X.plotThree, c),
+
+  /** Dragged onto a bed to water it. Furniture rather than something carried, so watering
+   *  is picking the can up and tipping it over the plant. */
+  wateringCan: () => (
+    <g>
+      {hitPad(330, 186, 66, 46)}
+      <path d="M338,204 h34 l-4,28 h-26 z" fill="#5ed64a" />
+      <rect x={334} y={199} width={42} height={8} rx={4} fill="#3fae5a" />
+      <path d="M340,199 q9,-15 22,-2" stroke="#3fae5a" strokeWidth={4.5} fill="none" strokeLinecap="round" />
+      <path d="M374,206 l16,-10 l4,6 l-16,10 z" fill="#3fae5a" />
+      <ellipse cx={391} cy={198} rx={6} ry={4.5} fill="#9be07a" transform="rotate(-32 391 198)" />
+    </g>
+  ),
+
+  /** Where seeds come from. The market's four stalls already fill its width, and seeds
+   *  belong where the growing happens. */
+  seedTable: (c) => (
+    <g>
+      {hitPad(264, 176, 62, 56)}
+      <rect x={264} y={196} width={62} height={9} rx={4} fill={WOOD} />
+      <rect x={270} y={205} width={7} height={27} rx={3} fill={WOOD_DARK} />
+      <rect x={313} y={205} width={7} height={27} rx={3} fill={WOOD_DARK} />
+      {(STALL_STOCK.seedTable ?? []).slice(0, 3).map((id, i) => {
+        const thing = THINGS[id];
+        if (!thing) return null;
+        return (
+          <g key={id} transform={"translate(" + (277 + i * 18) + " 186) scale(0.4)"}>
+            {thing.art()}
+          </g>
+        );
+      })}
+      {c.open && <rect x={262} y={194} width={66} height={4} rx={2} fill="#ffd23f" />}
     </g>
   ),
 

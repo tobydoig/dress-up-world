@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from "react";
@@ -17,19 +18,24 @@ import {
   FLOATING,
   LAMPS,
   LIGHT_GLOW,
+  modeCount,
   PAD,
   POPPED_BALLOONS,
   STACKABLE,
   STALLS,
   WALL_MOUNTED,
   CONTAINER_DROP,
+  PLOTS,
+  WATERING_CAN,
   capacityOf,
   facingCount,
   isLit,
+  plotDrop,
   renderFurniture,
   seatShift,
   slotAt,
 } from "./furniture";
+import { CROPS, isThirsty, ripeness } from "../data/growing";
 import { FURNITURE_GROUPS, ROOMS, ROOM_ORDER, type RoomDef, type RoomId } from "../data/rooms";
 import {
   APPLIANCES,
@@ -43,7 +49,10 @@ import {
 import type { AvatarLook } from "../data/wardrobe";
 import {
   BASKET_LIMIT,
+  MAX_CAST,
+  castHome,
   type AvatarPose,
+  type Placement,
   type PlacedFurniture,
   type RoomState,
   type SavedCharacter,
@@ -61,6 +70,7 @@ import {
   playTap,
   playThud,
   playTurn,
+  playWater,
   playWhoosh,
   playYuck,
 } from "../lib/sound";
@@ -148,36 +158,37 @@ const REACTION_MS = 1100;
 const CHEW_MS = 1500;
 
 /**
- * How dark the whole scene goes. Day adds nothing at all, so the rooms look exactly as they
- * did before anyone thought about time of day.
+ * How long nightfall takes. Long enough to be worth watching the sun go down, short enough
+ * that a four-year-old who tapped the button by accident isn't stuck waiting for the room to
+ * come back. Everything that changes with the time of day moves over exactly this long, so
+ * the sky, the sun and the darkening all arrive together.
  */
-const TINT: Record<TimeOfDay, { colour: string; opacity: number }> = {
-  day: { colour: "#000000", opacity: 0 },
-  dusk: { colour: "#3a2a6b", opacity: 0.28 },
-  night: { colour: "#0d1240", opacity: 0.54 },
-};
+const SKY_MS = 1400;
+const SKY_EASE = "cubic-bezier(0.45, 0.05, 0.35, 1)";
+const skyMove = (property: string) => property + " " + SKY_MS + "ms " + SKY_EASE;
 
 /**
- * Icon only. Spelling out "Teatime" next to the character picker and the dress-up button was
- * enough to wrap the room name onto a second line on a phone, which is the size this is played
- * at. The name goes in the label instead.
+ * How dark the whole scene goes. One colour at two strengths rather than a colour per time:
+ * a single number can be handed straight to a CSS transition, so the room dims smoothly
+ * instead of stepping. Day is nothing at all, so daylit rooms look exactly as they always did.
  */
+const NIGHT_WASH = "#0d1240";
+const WASH: Record<TimeOfDay, number> = { day: 0, night: 0.54 };
+
+/** Icon only — the name goes in the label, where it can't push the room name onto two lines. */
 const TIME_ICON: Record<TimeOfDay, string> = {
   day: "☀️",
-  dusk: "🌆",
   night: "🌙",
 };
 
 const TIME_NAME: Record<TimeOfDay, string> = {
   day: "Daytime",
-  dusk: "Teatime",
   night: "Night",
 };
 
 /** What's behind the window, which is the quickest way to tell what time it is. */
 const SKY: Record<TimeOfDay, string> = {
   day: "#bfe8ff",
-  dusk: "#ffb37a",
   night: "#28306b",
 };
 
@@ -187,7 +198,7 @@ const STARS: Array<[number, number, number]> = [
   [306, 22, 2.4], [352, 52, 1.6], [196, 18, 2], [22, 72, 1.7],
 ];
 
-type DragTarget = { kind: "avatar" } | { kind: "furniture"; id: string };
+type DragTarget = { kind: "avatar"; id: string } | { kind: "furniture"; id: string };
 
 /**
  * Which panel is showing. Cupboards deliberately don't have one: you open them and drag things
@@ -201,7 +212,10 @@ type ThingSource =
   | { kind: "container"; id: string; index: number };
 
 /** Somewhere a carried thing can be let go and have something happen. */
-type DropTarget = { kind: "container"; id: string } | { kind: "mouth" };
+type DropTarget =
+  | { kind: "container"; id: string }
+  | { kind: "plot"; id: string }
+  | { kind: "mouth"; id: string };
 
 interface ThingDrag {
   thingId: string;
@@ -232,6 +246,8 @@ interface DragState {
    * created.
    */
   overBin: boolean;
+  /** Set while the watering can is being dragged over a planted bed. */
+  overPlot: string | null;
   /**
    * The nodes the drag writes to directly. Every move used to update React state, which
    * redrew the scene to move one thing; now the move sets a transform and the save is told
@@ -241,7 +257,7 @@ interface DragState {
   /** The wrapper holding what is inside an open container, which travels with it. */
   contents: SVGGElement | null;
   /** Set when someone is sitting on the dragged piece and has to be carried along. */
-  rider: { node: SVGGElement; id: string; facing: number } | null;
+  rider: { node: SVGGElement; id: string; facing: number; who: string } | null;
   /** Where the drag has got to: a piece's offset, or the character's position. */
   x: number;
   y: number;
@@ -267,6 +283,22 @@ function pieceTransform(dx: number, dy: number): string {
 
 const AVATAR_SCALE = 0.47;
 
+/**
+ * Breathing and blinking start the moment the element appears, so three characters who came
+ * out together would rise and fall as one animal. Spreading them by their place in the line
+ * rather than by anything hashed guarantees they are as far apart as three can be — and the
+ * two loops get their own offsets, or the first and last would still breathe together while
+ * only their blinking differed.
+ */
+const BREATHE_S = 3.6;
+const BLINK_S = 5.4;
+
+function phaseOf(index: number, count: number): { breathe: number; blink: number } {
+  const at = index / Math.max(1, count);
+  return { breathe: at * BREATHE_S, blink: at * BLINK_S };
+}
+
+
 function characterTransform(x: number, y: number, pose: AvatarPose): string {
   return (
     "translate(" + x + " " + y + ")" +
@@ -280,12 +312,12 @@ function characterTransform(x: number, y: number, pose: AvatarPose): string {
  * measured off the page, so it costs nothing to ask for on every pointer move. Lying down
  * rotates the whole figure a quarter turn, which puts the head out to the side.
  */
-function faceAt(room: RoomState): { x: number; y: number; r: number } {
+function faceAt(place: Placement): { x: number; y: number; r: number } {
   const reach = AVATAR_SCALE * (HEAD.cy - 380);
   const r = AVATAR_SCALE * HEAD.r;
-  return room.avatarPose === "lie"
-    ? { x: room.avatarX + reach, y: room.avatarY, r }
-    : { x: room.avatarX, y: room.avatarY + reach, r };
+  return place.pose === "lie"
+    ? { x: place.x + reach, y: place.y, r }
+    : { x: place.x, y: place.y + reach, r };
 }
 
 /**
@@ -319,11 +351,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function rgba(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + alpha + ")";
-}
-
 /** A thing's own artwork, sized to fit a square button or slot. */
 function ThingArt({ id }: { id: string }): ReactElement | null {
   const thing = THINGS[id];
@@ -348,16 +375,19 @@ const Piece = memo(function Piece({
   item,
   dragging,
   popped,
+  thirsty,
   onGrab,
   onGrabThing,
 }: {
   item: PlacedFurniture;
   dragging: boolean;
   popped: boolean;
+  /** Passed in rather than worked out here: a fresh object every render would defeat memo. */
+  thirsty: boolean;
   onGrab: (e: ReactPointerEvent<SVGGElement>, id: string) => void;
   onGrabThing: (e: ReactPointerEvent<SVGGElement>, from: ThingSource, thingId: string) => void;
 }): ReactElement | null {
-  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, item);
+  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, { ...item, thirsty });
   if (!art) return null;
 
   return (
@@ -367,6 +397,7 @@ const Piece = memo(function Piece({
           back to where it was authored. */}
       <g
         className={"draggable" + (dragging ? " is-dragging" : "")}
+        data-piece={item.id}
         transform={pieceTransform(item.dx, item.dy)}
         onPointerDown={(e) => onGrab(e, item.id)}
       >
@@ -408,21 +439,26 @@ const Piece = memo(function Piece({
 
 /** Memoised for the same reason: dragging the furniture must not redraw the whole character. */
 const Character = memo(function Character({
+  id,
   look,
   uid,
   x,
   y,
   pose,
+  phase,
   chewing,
   mouthOpen,
   dragging,
   onGrab,
 }: {
+  id: string;
   look: AvatarLook;
   uid: string;
   x: number;
   y: number;
   pose: AvatarPose;
+  /** How far into each of the two idle loops this one starts. See `phaseOf`. */
+  phase: { breathe: number; blink: number };
   chewing: boolean;
   mouthOpen: boolean;
   dragging: boolean;
@@ -431,7 +467,14 @@ const Character = memo(function Character({
   return (
     <g
       className={"draggable character" + (dragging ? " is-dragging" : "")}
+      data-avatar={id}
       transform={characterTransform(x, y, pose)}
+      style={
+        {
+          ["--phase-breathe"]: -phase.breathe.toFixed(2) + "s",
+          ["--phase-blink"]: -phase.blink.toFixed(2) + "s",
+        } as CSSProperties
+      }
       onPointerDown={onGrab}
     >
       <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} mouthOpen={mouthOpen} />
@@ -439,36 +482,105 @@ const Character = memo(function Character({
   );
 });
 
+/**
+ * The sun and the moon ride opposite ends of one invisible arm. Half a turn swings one of
+ * them down out of the sky and carries the other one up — the whole of nightfall in a single
+ * number, and it runs backwards for free when she taps the button again.
+ *
+ * Each body counter-turns by the same amount about its own centre, so the crescent arrives
+ * the right way up instead of upside down.
+ */
+function SkyArm({
+  pivot,
+  sunAt,
+  night,
+  sun,
+  moon,
+}: {
+  /** What the arm turns about — always somewhere below the sky, out of sight. */
+  pivot: [number, number];
+  /** Where the sun sits by day. The moon is drawn at the far end of the arm from here. */
+  sunAt: [number, number];
+  night: boolean;
+  sun: ReactElement;
+  moon: ReactElement;
+}): ReactElement {
+  const angle = night ? 180 : 0;
+  // Half a turn has to land the moon exactly where the sun was, so its resting place isn't a
+  // free choice: it's the sun's position reflected through the pivot.
+  const moonAt: [number, number] = [2 * pivot[0] - sunAt[0], 2 * pivot[1] - sunAt[1]];
+  const turn = (degrees: number, [ox, oy]: [number, number]): CSSProperties => ({
+    transformBox: "view-box",
+    transformOrigin: ox + "px " + oy + "px",
+    transform: "rotate(" + degrees + "deg)",
+    transition: skyMove("transform"),
+  });
+  return (
+    <g className="sky-arm" style={turn(angle, pivot)}>
+      <g className="sky-arm" style={turn(-angle, sunAt)}>
+        {sun}
+      </g>
+      <g className="sky-arm" style={turn(-angle, moonAt)}>
+        {moon}
+      </g>
+    </g>
+  );
+}
+
 /** The window, or — outdoors — the sky, both of which change with the time of day. */
 const RoomFittings = memo(function RoomFittings({ room, time }: { room: RoomDef; time: TimeOfDay }): ReactElement {
+  const night = time === "night";
+  /* Stars don't move with the arm; they just arrive. */
+  const stars: CSSProperties = { opacity: night ? 0.9 : 0, transition: skyMove("opacity") };
+
   if (room.outdoor) {
     return (
       <g>
-        {time === "night" ? (
-          <g>
-            {STARS.map(([x, y, r]) => (
-              <circle key={x + ":" + y} cx={x} cy={y} r={r} fill="#fffdfa" opacity={0.9} />
-            ))}
-            <circle cx={324} cy={62} r={22} fill="#fff3c4" />
-            <circle cx={314} cy={54} r={19} fill={room.wall} />
-          </g>
-        ) : (
-          <g>
-            {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
-              <rect
-                key={a}
-                x={-3}
-                y={-34}
-                width={6}
-                height={11}
-                rx={3}
-                fill={time === "dusk" ? "#ff9040" : "#ffe067"}
-                transform={"translate(324 62) rotate(" + a + ")"}
-              />
-            ))}
-            <circle cx={324} cy={62} r={21} fill={time === "dusk" ? "#ff7a3f" : "#ffd23f"} />
-          </g>
-        )}
+        <defs>
+          <clipPath id="sky-band">
+            <rect x={0} y={0} width={ROOM_W} height={WALL_BOTTOM} />
+          </clipPath>
+        </defs>
+
+        <g style={stars}>
+          {STARS.map(([x, y, r]) => (
+            <circle key={x + ":" + y} cx={x} cy={y} r={r} fill="#fffdfa" />
+          ))}
+        </g>
+
+        {/* Clipped to the sky, so the sun sets behind the horizon instead of sliding over
+            the grass, and the moon comes up out of it. */}
+        <g clipPath="url(#sky-band)">
+          <SkyArm
+            pivot={[200, 202]}
+            sunAt={[324, 62]}
+            night={night}
+            sun={
+              <g>
+                {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+                  <rect
+                    key={a}
+                    x={-3}
+                    y={-34}
+                    width={6}
+                    height={11}
+                    rx={3}
+                    fill="#ffe067"
+                    transform={"translate(324 62) rotate(" + a + ")"}
+                  />
+                ))}
+                <circle cx={324} cy={62} r={21} fill="#ffd23f" />
+              </g>
+            }
+            moon={
+              <g>
+                <circle cx={76} cy={342} r={22} fill="#fff3c4" />
+                <circle cx={66} cy={334} r={19} fill={room.wall} />
+              </g>
+            }
+          />
+        </g>
+
         {([
           [70, 60, 1],
           [188, 36, 0.8],
@@ -487,26 +599,57 @@ const RoomFittings = memo(function RoomFittings({ room, time }: { room: RoomDef;
 
   return (
     <g>
-      <rect x={160} y={74} width={80} height={68} rx={7} fill={SKY[time]} stroke={room.wallTrim} strokeWidth={7} />
-      <path d="M200,76 v64 M162,108 h76" stroke={room.wallTrim} strokeWidth={5} />
-      {time === "night" ? (
-        <g>
-          <circle cx={222} cy={92} r={9} fill="#fff3c4" />
-          <circle cx={218} cy={88} r={7.5} fill={SKY.night} />
+      <defs>
+        {/* The glass, inside the frame's stroke. */}
+        <clipPath id="window-glass">
+          <rect x={163.5} y={77.5} width={73} height={61} rx={4} />
+        </clipPath>
+      </defs>
+
+      <rect
+        x={160}
+        y={74}
+        width={80}
+        height={68}
+        rx={7}
+        fill={SKY[time]}
+        style={{ transition: skyMove("fill") }}
+      />
+
+      <g clipPath="url(#window-glass)">
+        <g style={stars}>
           <circle cx={176} cy={90} r={1.8} fill="#fffdfa" />
           <circle cx={186} cy={124} r={1.6} fill="#fffdfa" />
           <circle cx={226} cy={126} r={1.7} fill="#fffdfa" />
         </g>
-      ) : (
-        <circle cx={222} cy={92} r={9} fill={time === "dusk" ? "#ff7a3f" : "#fff3b0"} />
-      )}
+        {/* The sun keeps its old spot in the top-right pane, clear of the glazing bar — dead
+            centre it was half-hidden behind it and stopped reading as a sun at all. Pivoting
+            below the middle of the glass sends it down behind the sill and brings the moon
+            up to the same spot. */}
+        <SkyArm
+          pivot={[200, 126]}
+          sunAt={[214, 94]}
+          night={night}
+          sun={<circle cx={214} cy={94} r={9} fill="#fff3b0" />}
+          moon={
+            <g>
+              <circle cx={186} cy={158} r={9} fill="#fff3c4" />
+              {/* The bite out of the crescent is sky, so it has to fade with the sky. */}
+              <circle cx={182} cy={154} r={7.5} fill={SKY[time]} style={{ transition: skyMove("fill") }} />
+            </g>
+          }
+        />
+      </g>
+
+      {/* Frame and glazing bars last, so they pass in front of whatever is behind the glass. */}
+      <rect x={160} y={74} width={80} height={68} rx={7} fill="none" stroke={room.wallTrim} strokeWidth={7} />
+      <path d="M200,76 v64 M162,108 h76" stroke={room.wallTrim} strokeWidth={5} />
       <path d={"M0,44 h" + ROOM_W} stroke={room.wallTrim} strokeWidth={6} opacity={0.65} />
     </g>
   );
 });
 
 export function ExploreMode({
-  look,
   roomId,
   room: roomState,
   basket,
@@ -525,13 +668,17 @@ export function ExploreMode({
   onStore,
   onTakeOut,
   onCook,
+  onPlant,
+  onWater,
+  onHarvest,
   characters,
   activeId,
-  onSwitchCharacter,
+  inScene,
+  onToggleInScene,
+  onFocusCharacter,
   onNewCharacter,
   onDesign,
 }: {
-  look: AvatarLook | null;
   roomId: RoomId;
   room: RoomState;
   basket: string[];
@@ -542,6 +689,7 @@ export function ExploreMode({
   onUpdateFurniture: (furnitureId: string, patch: Partial<PlacedFurniture>) => void;
   onRemoveFurniture: (furnitureId: string) => void;
   onMoveAvatar: (
+    id: string,
     x: number,
     y: number,
     settle?: { pose: AvatarPose; seat: string | null }
@@ -554,9 +702,14 @@ export function ExploreMode({
   onStore: (furnitureId: string, index: number) => void;
   onTakeOut: (furnitureId: string, index: number) => void;
   onCook: (indices: number[], dishId: string) => void;
+  onPlant: (plotId: string, index: number) => void;
+  onWater: (plotId: string) => void;
+  onHarvest: (plotId: string) => void;
   characters: SavedCharacter[];
   activeId: string | null;
-  onSwitchCharacter: (id: string) => void;
+  inScene: string[];
+  onToggleInScene: (id: string) => void;
+  onFocusCharacter: (id: string) => void;
   onNewCharacter: () => void;
   onDesign: () => void;
 }) {
@@ -568,7 +721,8 @@ export function ExploreMode({
   const [pot, setPot] = useState<number[]>([]);
   const [padId, setPadId] = useState<string | null>(null);
   const [reaction, setReaction] = useState<string | null>(null);
-  const [chewing, setChewing] = useState(false);
+  /** Who is mid-mouthful, if anyone. */
+  const [chewingId, setChewingId] = useState<string | null>(null);
   /** A thing being carried on a fingertip, in client pixels, for drawing it under the finger. */
   const [held, setHeld] = useState<{
     thingId: string;
@@ -579,6 +733,8 @@ export function ExploreMode({
     over: DropTarget | null;
   } | null>(null);
   const [overBin, setOverBin] = useState(false);
+  /** Which bed the watering can is hovering over, for the highlight. */
+  const [overPlot, setOverPlot] = useState<string | null>(null);
   /** When the sheet opened, to ignore the click that opened it arriving on the new backdrop. */
   const sheetOpenedAt = useRef(0);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
@@ -597,8 +753,31 @@ export function ExploreMode({
   // it was before anything moved.
   const basketRef = useRef(basket);
   basketRef.current = basket;
-  const lookRef = useRef(look);
-  lookRef.current = look;
+  /**
+   * Everyone who is out, with the look they were saved with and where they are standing in
+   * this room. Somebody who has never been in here yet has no saved spot, so they take their
+   * place in the line-up — which is the middle of the floor when there is only one of them,
+   * exactly where a lone character has always stood.
+   */
+  const cast: Array<{ id: string; look: AvatarLook; place: Placement }> = inScene
+    .map((id, i) => {
+      const character = characters.find((c) => c.id === id);
+      if (!character) return null;
+      return {
+        id,
+        look: character.look,
+        place: roomState.places[id] ?? castHome(i, inScene.length),
+      };
+    })
+    .filter((member): member is { id: string; look: AvatarLook; place: Placement } => member !== null);
+
+  const castRef = useRef(cast);
+  castRef.current = cast;
+
+  /** Where one of them is standing, whether or not the room has a saved spot for them. */
+  function placeOf(id: string): Placement | null {
+    return castRef.current.find((member) => member.id === id)?.place ?? null;
+  }
 
   const room = ROOMS[roomId];
 
@@ -702,8 +881,10 @@ export function ExploreMode({
     let bounds: DragState["bounds"];
 
     if (target.kind === "avatar") {
-      originX = roomStateRef.current.avatarX;
-      originY = roomStateRef.current.avatarY;
+      const place = placeOf(target.id);
+      if (!place) return;
+      originX = place.x;
+      originY = place.y;
       bounds = AVATAR_BOUNDS;
     } else {
       const item = roomStateRef.current.items.find((i) => i.id === target.id);
@@ -764,10 +945,14 @@ export function ExploreMode({
       const svg = svgRef.current;
       contents = svg?.querySelector<SVGGElement>('[data-contents="' + target.id + '"]') ?? null;
       const current = roomStateRef.current;
-      if (current.avatarSeat === target.id) {
-        const riderNode = svg?.querySelector<SVGGElement>("g.character") ?? null;
+      const who = riderOf(target.id);
+      if (who) {
+        const riderNode =
+          svg?.querySelector<SVGGElement>('g.character[data-avatar="' + who + '"]') ?? null;
         const item = current.items.find((i) => i.id === target.id);
-        if (riderNode && item) rider = { node: riderNode, id: target.id, facing: item.facing };
+        if (riderNode && item) {
+          rider = { node: riderNode, id: target.id, facing: item.facing, who };
+        }
       }
     }
 
@@ -795,10 +980,22 @@ export function ExploreMode({
       applyDrag(drag);
 
       if (drag.target.kind === "furniture") {
+        const dragged = drag.target.id;
         const over = isOverBin(drag, ev);
         if (over !== drag.overBin) {
           drag.overBin = over;
           setOverBin(over);
+        }
+
+        // The watering can is tipped over a bed by being dragged onto it.
+        if (dragged === WATERING_CAN) {
+          const at = toRoom(ev.clientX, ev.clientY);
+          const bed = at ? plotUnder(at) : null;
+          const id = bed?.planted ? bed.id : null;
+          if (id !== drag.overPlot) {
+            drag.overPlot = id;
+            setOverPlot(id);
+          }
         }
       }
     };
@@ -813,15 +1010,16 @@ export function ExploreMode({
       dragRef.current = null;
       setDraggingKey(null);
       setOverBin(false);
+      setOverPlot(null);
 
       // The moves only moved the DOM, so this is where the save finds out where things are.
       if (drag.target.kind === "avatar") {
-        onMoveAvatar(drag.x, drag.y);
+        onMoveAvatar(drag.target.id, drag.x, drag.y);
       } else {
         onMoveFurniture(drag.target.id, drag.x, drag.y);
         if (drag.rider) {
           const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
-          if (place) onMoveAvatar(place.x, place.y);
+          if (place) onMoveAvatar(drag.rider.who, place.x, place.y);
         }
       }
 
@@ -840,7 +1038,16 @@ export function ExploreMode({
         return;
       }
 
-      if (drag.target.kind === "avatar") settleAvatar(drag.x, drag.y);
+      if (drag.target.kind === "furniture" && drag.overPlot) {
+        water(drag.overPlot);
+        // Back to its spot afterwards. Left where it was dropped it sits on top of the bed
+        // it just watered, and the next drag is a zero-distance move — which reads as a tap
+        // and waters nothing.
+        onMoveFurniture(WATERING_CAN, 0, 0);
+        return;
+      }
+
+      if (drag.target.kind === "avatar") settleAvatar(drag.target.id, drag.x, drag.y);
       playPop();
     };
 
@@ -858,8 +1065,9 @@ export function ExploreMode({
       rider,
       x: originX,
       y: originY,
-      pose: roomStateRef.current.avatarPose,
+      pose: (target.kind === "avatar" && placeOf(target.id)?.pose) || "stand",
       overBin: false,
+      overPlot: null,
       binRect: null,
       move,
       end,
@@ -869,15 +1077,42 @@ export function ExploreMode({
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
 
-    setDraggingKey(target.kind === "avatar" ? "avatar" : target.id);
+    setDraggingKey(target.kind === "avatar" ? "avatar:" + target.id : target.id);
     playTap();
+  }
+
+  /**
+   * A drink. Growth comes from this, never from the clock — the clock only decides when the
+   * next one is due, which is what makes it worth coming back.
+   */
+  function water(plotId: string) {
+    const bed = roomStateRef.current.items.find((i) => i.id === plotId);
+    if (!bed?.planted) return;
+    const crop = CROPS[bed.planted];
+    if (!crop) return;
+
+    if (ripeness(crop, bed.stage) >= 1) {
+      setReaction("It's ready — give it a tap to pick it!");
+      playTap();
+      return;
+    }
+    if (!isThirsty(bed.wateredAt, Date.now())) {
+      // Not a telling-off: it simply doesn't need one yet.
+      setReaction("It's had a drink. Come back later.");
+      playTap();
+      return;
+    }
+
+    onWater(plotId);
+    setReaction("Glug glug!");
+    playWater();
   }
 
   /** Throw a piece away, standing the character up first if they were sitting on it. */
   function binFurniture(id: string) {
-    const current = roomStateRef.current;
-    if (current.avatarSeat === id) {
-      onMoveAvatar(current.avatarX, current.avatarY, { pose: "stand", seat: null });
+    for (const member of castRef.current) {
+      if (member.place.seat !== id) continue;
+      onMoveAvatar(member.id, member.place.x, member.place.y, { pose: "stand", seat: null });
     }
     if (tray?.id === id) closeTray();
     if (padId === id) setPadId(null);
@@ -892,9 +1127,12 @@ export function ExploreMode({
   function onTap(target: DragTarget, x: number, y: number) {
     const current = roomStateRef.current;
     if (target.kind === "avatar") {
+      // Touching one of them is how she says which one she means — so "Dress up" goes on to
+      // edit whoever she last had her finger on, with no extra control to find.
+      onFocusCharacterRef.current(target.id);
       // Tap the character to get them back up again.
-      if (current.avatarPose !== "stand") {
-        onMoveAvatar(x, y - 18, { pose: "stand", seat: null });
+      if (placeOf(target.id)?.pose !== "stand") {
+        onMoveAvatar(target.id, x, y - 18, { pose: "stand", seat: null });
         playSparkle();
       } else {
         playPop();
@@ -910,6 +1148,28 @@ export function ExploreMode({
     // cupboard opens, a lamp lights, a chair turns.
     if (id === "pictureFrame") {
       setPadId(id);
+      playTap();
+      return;
+    }
+
+    if (PLOTS.has(id)) {
+      const crop = item.planted ? CROPS[item.planted] : null;
+      if (!crop) {
+        setReaction("Drop a seed packet in here.");
+        playTap();
+        return;
+      }
+      if (ripeness(crop, item.stage) >= 1) {
+        onHarvest(id);
+        setReaction("You picked " + THINGS[crop.crop].name.toLowerCase() + "!");
+        playSparkle();
+        return;
+      }
+      setReaction(
+        isThirsty(item.wateredAt, Date.now())
+          ? "This one is thirsty."
+          : "It's growing. Come back later."
+      );
       playTap();
       return;
     }
@@ -941,6 +1201,13 @@ export function ExploreMode({
       return;
     }
 
+    const looks = modeCount(id);
+    if (looks > 1) {
+      onUpdateFurniture(id, { mode: (item.mode + 1) % looks });
+      playTap();
+      return;
+    }
+
     if (id === "balloons") {
       if (poppedAt === null) {
         setPoppedAt(Date.now());
@@ -954,9 +1221,10 @@ export function ExploreMode({
       const facing = (item.facing + 1) % turns;
       onUpdateFurniture(id, { facing });
       // The seat moves when the chair turns, so whoever is on it has to move too.
-      if (current.avatarSeat === id) {
+      const rider = riderOf(id);
+      if (rider) {
         const place = seatPlace({ ...item, facing });
-        if (place) onMoveAvatar(place.x, place.y, { pose: place.pose, seat: id });
+        if (place) onMoveAvatar(rider, place.x, place.y, { pose: place.pose, seat: id });
       }
       playTurn();
       return;
@@ -965,14 +1233,19 @@ export function ExploreMode({
     playPop();
   }
 
-  /** After the character is dropped, sit or lie them on whatever they landed on. */
-  function settleAvatar(x: number, y: number) {
+  /** Who is sitting or lying on a given piece, if anyone. */
+  function riderOf(furnitureId: string): string | null {
+    return castRef.current.find((member) => member.place.seat === furnitureId)?.id ?? null;
+  }
+
+  /** After a character is dropped, sit or lie them on whatever they landed on. */
+  function settleAvatar(who: string, x: number, y: number) {
     const current = roomStateRef.current;
 
     // Dragging someone who is already sitting or lying always frees them. Otherwise the snap
     // radius grabs them straight back onto the seat and there's no way off it.
-    if (current.avatarPose !== "stand") {
-      onMoveAvatar(x, y, { pose: "stand", seat: null });
+    if (placeOf(who)?.pose !== "stand") {
+      onMoveAvatar(who, x, y, { pose: "stand", seat: null });
       playPop();
       return;
     }
@@ -984,6 +1257,10 @@ export function ExploreMode({
       const zone = seatZone(item);
       const place = seatPlace(item);
       if (!zone || !place) continue;
+      // One to a chair. Two characters in the same seat is a single blurred character, and
+      // dragging the chair afterwards could only ever take one of them with it.
+      const taken = riderOf(item.id);
+      if (taken !== null && taken !== who) continue;
       const distance = Math.hypot(x - zone.x, y - zone.y);
       if (distance < bestDistance) {
         bestDistance = distance;
@@ -992,7 +1269,7 @@ export function ExploreMode({
     }
 
     if (best) {
-      onMoveAvatar(best.x, best.y, { pose: best.pose, seat: best.id });
+      onMoveAvatar(who, best.x, best.y, { pose: best.pose, seat: best.id });
       playSparkle();
     }
   }
@@ -1007,17 +1284,42 @@ export function ExploreMode({
     return clientToSvg(svgRef.current, clientX, clientY);
   }
 
-  /** What the finger is over: a mouth to feed, an open cupboard to fill, or nothing. */
-  function dropTargetAt(clientX: number, clientY: number): DropTarget | null {
+  /** Which bed the pointer is over, whatever is being carried. */
+  function plotUnder(at: { x: number; y: number }): PlacedFurniture | null {
+    for (const item of roomStateRef.current.items) {
+      if (!PLOTS.has(item.id)) continue;
+      const box = plotDrop(item.id);
+      if (!box) continue;
+      const x = box.x + item.dx;
+      const y = FURNITURE_DROP + box.y + item.dy;
+      if (at.x >= x && at.x <= x + box.w && at.y >= y && at.y <= y + box.h) return item;
+    }
+    return null;
+  }
+
+  /** A bed to sow, a mouth to feed, an open cupboard to fill, or nothing. */
+  function dropTargetAt(clientX: number, clientY: number, thingId: string): DropTarget | null {
     const at = toRoom(clientX, clientY);
     if (!at) return null;
 
-    // The face wins any tie. A cupboard standing where someone's head is shouldn't get fed.
-    if (lookRef.current) {
-      const face = faceAt(roomStateRef.current);
-      // Generously wide: she is aiming at a face, not at a pair of lips.
-      if (Math.hypot(at.x - face.x, at.y - face.y) <= face.r * 1.5) return { kind: "mouth" };
+    // Seeds only ever go in the ground, so an empty bed takes priority over anything else.
+    if (CROPS[thingId]) {
+      const bed = plotUnder(at);
+      if (bed && !bed.planted) return { kind: "plot", id: bed.id };
     }
+
+    // A face wins any tie. A cupboard standing where someone's head is shouldn't get fed.
+    // With more than one of them out, the food goes to whichever face it is closest to.
+    let mouth: { id: string; distance: number } | null = null;
+    for (const member of castRef.current) {
+      const face = faceAt(member.place);
+      const distance = Math.hypot(at.x - face.x, at.y - face.y);
+      // Generously wide: she is aiming at a face, not at a pair of lips.
+      if (distance <= face.r * 1.5 && (!mouth || distance < mouth.distance)) {
+        mouth = { id: member.id, distance };
+      }
+    }
+    if (mouth) return { kind: "mouth", id: mouth.id };
 
     for (const item of openContainers()) {
       const box = CONTAINER_DROP[item.id];
@@ -1038,7 +1340,7 @@ export function ExploreMode({
     const move = (ev: PointerEvent) => {
       const drag = thingDragRef.current;
       if (!drag) return;
-      drag.over = dropTargetAt(ev.clientX, ev.clientY);
+      drag.over = dropTargetAt(ev.clientX, ev.clientY, drag.thingId);
       setHeld({
         thingId: drag.thingId,
         index: drag.from.kind === "basket" ? drag.from.index : null,
@@ -1080,7 +1382,16 @@ export function ExploreMode({
 
   function dropThing(from: ThingSource, target: DropTarget | null) {
     if (target?.kind === "mouth") {
-      eat(from);
+      eat(target.id, from);
+      return;
+    }
+
+    if (target?.kind === "plot") {
+      if (from.kind === "basket") {
+        onPlant(target.id, from.index);
+        setReaction("Planted! Now give it a drink.");
+        playSparkle();
+      }
       return;
     }
 
@@ -1116,8 +1427,8 @@ export function ExploreMode({
     playPop();
   }
 
-  /** Eats whatever was dragged to the face, from the basket or straight off a shelf. */
-  function eat(from: ThingSource) {
+  /** Whoever the food was dragged to eats it, from the basket or straight off a shelf. */
+  function eat(who: string, from: ThingSource) {
     const thingId =
       from.kind === "basket"
         ? basketRef.current[from.index]
@@ -1133,7 +1444,7 @@ export function ExploreMode({
     }
 
     setReaction("Yum!");
-    setChewing(true);
+    setChewingId(who);
     playNom();
     if (from.kind === "basket") onEat(from.index);
     else onEatFrom(from.id, from.index);
@@ -1203,10 +1514,10 @@ export function ExploreMode({
   }, [reaction]);
 
   useEffect(() => {
-    if (!chewing) return;
-    const timer = setTimeout(() => setChewing(false), CHEW_MS);
+    if (chewingId === null) return;
+    const timer = setTimeout(() => setChewingId(null), CHEW_MS);
     return () => clearTimeout(timer);
-  }, [chewing]);
+  }, [chewingId]);
 
   /**
    * The scene's pieces are memoised, which only works if the handler they are given keeps its
@@ -1217,13 +1528,18 @@ export function ExploreMode({
   startDragRef.current = startDrag;
   const startThingDragRef = useRef(startThingDrag);
   startThingDragRef.current = startThingDrag;
+  const onFocusCharacterRef = useRef(onFocusCharacter);
+  onFocusCharacterRef.current = onFocusCharacter;
 
   const grabPiece = useCallback((e: ReactPointerEvent<SVGGElement>, id: string) => {
     startDragRef.current(e, { kind: "furniture", id });
   }, []);
 
+  // Which character this is comes off the element rather than out of a closure, so the
+  // handler stays the same object for all three of them and the memo still holds.
   const grabAvatar = useCallback((e: ReactPointerEvent<SVGGElement>) => {
-    startDragRef.current(e, { kind: "avatar" });
+    const who = e.currentTarget.dataset.avatar;
+    if (who) startDragRef.current(e, { kind: "avatar", id: who });
   }, []);
 
   const grabThing = useCallback(
@@ -1233,17 +1549,13 @@ export function ExploreMode({
     []
   );
 
-  const tint = TINT[timeOfDay];
-  const lit = timeOfDay !== "day" ? roomState.items.filter((i) => LIGHT_GLOW[i.id] && isLit(i.id, i)) : [];
-  /**
-   * The scene is anchored to the top of the stage and the stage below it is painted floor
-   * colour, so nightfall has to be laid over that background too — tinting only inside the
-   * viewBox left a brightly lit strip of floor along the bottom of the screen.
-   */
-  const stageBackground =
-    tint.opacity > 0
-      ? "linear-gradient(" + rgba(tint.colour, tint.opacity) + "," + rgba(tint.colour, tint.opacity) + "), " + room.floor
-      : room.floor;
+  // One reading per render. Thirst is measured in hours, so nothing needs a ticking clock.
+  const now = Date.now();
+  const night = timeOfDay === "night";
+  const wash = WASH[timeOfDay];
+  /* Rendered whatever the time, so the lamps come up as the room goes down rather than
+     snapping on at the end of it. */
+  const lit = roomState.items.filter((i) => LIGHT_GLOW[i.id] && isLit(i.id, i));
 
   return (
     <div className="screen">
@@ -1255,7 +1567,7 @@ export function ExploreMode({
         <div className="topbar-actions">
           <button
             className="chip-btn chip-ghost chip-icon"
-            aria-label={TIME_NAME[timeOfDay] + " — tap to change the time of day"}
+            aria-label={TIME_NAME[timeOfDay] + " — tap to turn it to " + (night ? "day" : "night")}
             onClick={() => {
               onCycleTime();
               playWhoosh();
@@ -1265,14 +1577,14 @@ export function ExploreMode({
           </button>
           <button
             className="chip-btn chip-ghost"
-            aria-label="Choose who is here"
+            aria-label={"Choose who is here — " + inScene.length + " of " + characters.length + " out"}
             onClick={() => {
               sheetOpenedAt.current = Date.now();
               setCastOpen(true);
               playTap();
             }}
           >
-            👥 {characters.length}
+            👥 {inScene.length}
           </button>
           <button
             className="chip-btn chip-mode"
@@ -1286,7 +1598,14 @@ export function ExploreMode({
         </div>
       </header>
 
-      <div className="room-stage" style={{ background: stageBackground }}>
+      <div className="room-stage" style={{ background: room.floor }}>
+        {/*
+         * The scene is anchored to the top of the stage and the stage below it is painted
+         * floor colour, so nightfall has to reach that background too — darkening only what
+         * is inside the viewBox left a brightly lit strip of floor along the bottom of the
+         * screen. It sits behind the scene, which carries its own wash.
+         */}
+        <div className="night-wash" style={{ opacity: wash, background: NIGHT_WASH }} />
         <div key={roomId} className="room-slide">
           <svg
             ref={svgRef}
@@ -1337,24 +1656,32 @@ export function ExploreMode({
                 item={item}
                 dragging={draggingKey === item.id}
                 popped={item.id === "balloons" && poppedAt !== null}
+                thirsty={item.planted !== null && isThirsty(item.wateredAt, now)}
                 onGrab={grabPiece}
                 onGrabThing={grabThing}
               />
             ))}
 
-            {look && (
-              <Character
-                look={look}
-                uid={"room-" + roomId}
-                x={roomState.avatarX}
-                y={roomState.avatarY}
-                pose={roomState.avatarPose}
-                chewing={chewing}
-                mouthOpen={held?.over?.kind === "mouth"}
-                dragging={draggingKey === "avatar"}
-                onGrab={grabAvatar}
-              />
-            )}
+            {/* Drawn back to front, so whoever is standing nearest the front of the room is
+                the one in front — and the one your finger lands on. */}
+            {[...cast]
+              .sort((a, b) => a.place.y - b.place.y)
+              .map((member) => (
+                <Character
+                  key={member.id}
+                  id={member.id}
+                  look={member.look}
+                  uid={"room-" + roomId + "-" + member.id}
+                  x={member.place.x}
+                  y={member.place.y}
+                  pose={member.place.pose}
+                  phase={phaseOf(inScene.indexOf(member.id), cast.length)}
+                  chewing={chewingId === member.id}
+                  mouthOpen={held?.over?.kind === "mouth" && held.over.id === member.id}
+                  dragging={draggingKey === "avatar:" + member.id}
+                  onGrab={grabAvatar}
+                />
+              ))}
 
             {/* Where the thing on the end of her finger can be let go. */}
             {held &&
@@ -1379,30 +1706,49 @@ export function ExploreMode({
                   );
                 })}
 
-            {held && look && (
-              <circle
-                className={"drop-zone mouth-zone" + (held.over?.kind === "mouth" ? " is-over" : "")}
-                cx={faceAt(roomState).x}
-                cy={faceAt(roomState).y}
-                r={faceAt(roomState).r * 1.5}
-                pointerEvents="none"
-              />
-            )}
+            {/* Beds light up both for a seed on a fingertip and for the can being carried
+                over — only the ones that can actually take what is being offered. */}
+            {roomState.items
+              .filter((item) => {
+                if (!PLOTS.has(item.id)) return false;
+                if (held) return !!CROPS[held.thingId] && !item.planted;
+                return draggingKey === WATERING_CAN && !!item.planted;
+              })
+              .map((item) => {
+                const box = plotDrop(item.id);
+                if (!box) return null;
+                const isOver =
+                  (held?.over?.kind === "plot" && held.over.id === item.id) || overPlot === item.id;
+                return (
+                  <rect
+                    key={item.id}
+                    className={"drop-zone" + (isOver ? " is-over" : "")}
+                    x={box.x + item.dx}
+                    y={FURNITURE_DROP + box.y + item.dy}
+                    width={box.w}
+                    height={box.h}
+                    rx={8}
+                    pointerEvents="none"
+                  />
+                );
+              })}
 
             {/* Nightfall goes over the whole scene, and the lamps then punch back through it. */}
-            {tint.opacity > 0 && (
-              <rect
-                x={0}
-                y={0}
-                width={ROOM_W}
-                height={ROOM_H}
-                fill={tint.colour}
-                opacity={tint.opacity}
-                pointerEvents="none"
-              />
-            )}
+            <rect
+              x={0}
+              y={0}
+              width={ROOM_W}
+              height={ROOM_H}
+              fill={NIGHT_WASH}
+              opacity={wash}
+              style={{ transition: skyMove("opacity") }}
+              pointerEvents="none"
+            />
             {lit.length > 0 && (
-              <g style={{ mixBlendMode: "screen" }} pointerEvents="none">
+              <g
+                style={{ mixBlendMode: "screen", opacity: night ? 1 : 0, transition: skyMove("opacity") }}
+                pointerEvents="none"
+              >
                 {lit.map((item) => {
                   const glow = LIGHT_GLOW[item.id];
                   return (
@@ -1639,24 +1985,40 @@ export function ExploreMode({
                 ✕
               </button>
             </div>
+            <p className="sheet-hint">
+              Tap to bring someone out, or to send them back. Up to {MAX_CAST} at a time.
+            </p>
             <div className="sheet-scroll">
               <div className="sheet-grid">
-                {characters.map((c) => (
-                  <button
-                    key={c.id}
-                    className={"item" + (c.id === activeId ? " is-active" : "")}
-                    onClick={() => {
-                      onSwitchCharacter(c.id);
-                      setCastOpen(false);
-                      playSparkle();
-                    }}
-                  >
-                    <span className="item-art">
-                      <Avatar look={c.look} uid={"cast-" + c.id} animate={false} crop="10 6 180 220" />
-                    </span>
-                    <span className="item-name">{c.name}</span>
-                  </button>
-                ))}
+                {characters.map((c) => {
+                  const out = inScene.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      className={"item" + (out ? " is-active" : "")}
+                      aria-pressed={out}
+                      onClick={() => {
+                        onToggleInScene(c.id);
+                        playSparkle();
+                      }}
+                    >
+                      <span className="item-art">
+                        <Avatar
+                          look={c.look}
+                          uid={"cast-" + c.id}
+                          animate={false}
+                          crop="10 6 180 220"
+                        />
+                        {/* A tick for "out here with me", and the dress for the one the
+                            Dress up button would take you to. */}
+                        {out && (
+                          <span className="item-tick">{c.id === activeId ? "👗" : "✓"}</span>
+                        )}
+                      </span>
+                      <span className="item-name">{c.name}</span>
+                    </button>
+                  );
+                })}
                 <button
                   className="item"
                   onClick={() => {

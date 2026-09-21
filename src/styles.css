@@ -1642,13 +1642,112 @@ button {
   }
 }
 
-/* The character's face, lit up while food is being carried. Round rather than boxy, because
-   it is a head. */
-.mouth-zone {
-  stroke-dasharray: 7 6;
+/* No marker round the face while food is carried: the character opening her mouth says it
+   far better than a ring drawn round her head, which only looked like a target. */
+
+/* A plant asking for a drink. A bob, not a wilt — nothing here suffers for being left. */
+.wants-water {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: wants-water 1.9s ease-in-out infinite;
 }
 
-.mouth-zone.is-over {
-  fill: rgba(255, 210, 63, 0.3);
-  stroke-dasharray: none;
+@keyframes wants-water {
+  0%, 100% { transform: translateY(0); opacity: 0.85; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wants-water {
+    animation: none;
+  }
+}
+
+/* ---------- day and night ---------- */
+
+/* Behind the scene, covering the painted floor that fills the stage below the viewBox. The
+   scene has its own wash inside the SVG; this one only shows where the scene doesn't reach. */
+.night-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  transition: opacity 1400ms cubic-bezier(0.45, 0.05, 0.35, 1);
+}
+
+/* The scene is not positioned, so without this the wash above would paint over it. */
+.room-slide {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .night-wash,
+  .sky-arm {
+    transition: none !important;
+  }
+}
+
+/* ---------- what's on the computer ---------- */
+
+/* Two stacked copies of the same rows; scrolling exactly one copy's height and starting over
+   makes a loop with no visible jump. --screen-block is that height, set where it's drawn. */
+.screen-code {
+  animation: screen-code 4.5s linear infinite;
+}
+
+@keyframes screen-code {
+  from { transform: translateY(0); }
+  to { transform: translateY(var(--screen-block)); }
+}
+
+/* Each star sits on its own rotated arm, so one keyframe flying along +x gives a whole
+   starfield once the arms point different ways and the delays are staggered. */
+.screen-star {
+  animation: screen-star 2.4s linear infinite;
+}
+
+@keyframes screen-star {
+  0% { transform: translateX(2px) scale(0.3); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateX(34px) scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-code,
+  .screen-star {
+    animation: none;
+  }
+}
+
+/* ---------- who is out in the room ---------- */
+
+.item-art {
+  position: relative;
+}
+
+.item-tick {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  line-height: 1;
+  background: var(--yellow);
+  color: #3a2a06;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* Each character starts their breathing and blinking at their own moment, so three of them
+   standing together don't rise and fall as one animal. */
+.av-breathe {
+  animation-delay: var(--phase-breathe, 0s);
+}
+
+.av-blink {
+  animation-delay: var(--phase-blink, 0s);
 }

@@ -1,6 +1,7 @@
 import { DEFAULT_LOOK, LEGACY_MOTIF_COLOUR, type AvatarLook } from "../data/wardrobe";
 import { ALL_FURNITURE_IDS, ROOMS, ROOM_ORDER, type RoomId } from "../data/rooms";
 import { ALL_THING_IDS } from "../data/things";
+import { CROPS } from "../data/growing";
 
 export interface SavedCharacter {
   id: string;
@@ -35,32 +36,57 @@ export interface PlacedFurniture {
   /** Ids from THINGS that have been put inside this piece. */
   stored: string[];
   strokes: Stroke[];
+  /** A growing bed: which crop is in it, how many waterings it has had, and when the last
+   *  one was. Growth comes from the waterings; the timestamp only decides when the next
+   *  drink is due. */
+  planted: string | null;
+  stage: number;
+  wateredAt: number;
+  /** Which of its looks the piece is showing; what that means is up to the piece. */
+  mode: number;
 }
 
 export type AvatarPose = "stand" | "sit" | "lie";
 
 /** One setting for the whole world, so walking into the next room doesn't change the time. */
-export type TimeOfDay = "day" | "dusk" | "night";
+export type TimeOfDay = "day" | "night";
 
-export const TIME_ORDER: TimeOfDay[] = ["day", "dusk", "night"];
+export const TIME_ORDER: TimeOfDay[] = ["day", "night"];
 
-export interface RoomState {
-  items: PlacedFurniture[];
-  /** Where the character is standing, in room coordinates (their feet). */
-  avatarX: number;
-  avatarY: number;
-  avatarPose: AvatarPose;
+/**
+ * There used to be a teatime in the middle. Two states make the button a light switch — one
+ * tap, one obvious result — where three made it a cycle you had to step through.
+ */
+const LEGACY_DUSK = "dusk";
+
+/** Where one character is standing in one room. */
+export interface Placement {
+  /** Room coordinates, at their feet. */
+  x: number;
+  y: number;
+  pose: AvatarPose;
   /**
    * Which piece they are sitting or lying on, by id. Worked out from coordinates once, which
    * broke the moment a chair could be turned: the seat moves, the saved position doesn't, and
    * the character is suddenly sitting on nothing. Remembering the piece makes it explicit.
    */
-  avatarSeat: string | null;
+  seat: string | null;
+}
+
+export interface RoomState {
+  items: PlacedFurniture[];
+  /**
+   * Where each character who is out is standing, by character id. Somebody who is out but has
+   * never been in this room has no entry, and starts at their spot in the line-up.
+   */
+  places: Record<string, Placement>;
 }
 
 export interface GameSave {
   characters: SavedCharacter[];
   activeId: string | null;
+  /** Who is out in the world, in the order they came out. At most MAX_CAST of them. */
+  inScene: string[];
   rooms: Record<RoomId, RoomState>;
   lastRoom: RoomId;
   /** What the character is carrying. Follows them from room to room. */
@@ -71,6 +97,30 @@ export interface GameSave {
 const KEY = "dress-up-world:save:v1";
 
 export const AVATAR_HOME = { x: 200, y: 408 };
+
+/**
+ * How many can be out at once. Three fills the room without turning it into a crowd, and it
+ * is few enough that she can still tell which one she is holding.
+ */
+export const MAX_CAST = 3;
+
+/** Side by side, centred on the spot a lone character has always stood on. */
+export const CAST_GAP = 86;
+
+export function castHome(index: number, count: number): Placement {
+  return {
+    x: AVATAR_HOME.x + (index - (count - 1) / 2) * CAST_GAP,
+    y: AVATAR_HOME.y,
+    pose: "stand",
+    seat: null,
+  };
+}
+
+/**
+ * Old saves put one character in each room without recording which one it was — there only
+ * ever was one. Their position is parked under this key until the save knows who was active.
+ */
+const LEGACY_SOLO = "__solo";
 
 /** Only so many things fit in two small hands. */
 export const BASKET_LIMIT = 12;
@@ -88,17 +138,24 @@ export function newId(): string {
 
 /** A piece as it arrives in a room: where it was authored, shut, switched on and empty. */
 export function placeFurniture(id: string): PlacedFurniture {
-  return { id, dx: 0, dy: 0, facing: 0, open: false, on: true, stored: [], strokes: [] };
+  return {
+    id,
+    dx: 0,
+    dy: 0,
+    facing: 0,
+    open: false,
+    on: true,
+    stored: [],
+    strokes: [],
+    planted: null,
+    stage: 0,
+    wateredAt: 0,
+    mode: 0,
+  };
 }
 
 function starterRoom(room: RoomId): RoomState {
-  return {
-    items: ROOMS[room].startWith.map(placeFurniture),
-    avatarX: AVATAR_HOME.x,
-    avatarY: AVATAR_HOME.y,
-    avatarPose: "stand",
-    avatarSeat: null,
-  };
+  return { items: ROOMS[room].startWith.map(placeFurniture), places: {} };
 }
 
 /** Built from ROOM_ORDER so adding a room can't silently miss one. */
@@ -112,6 +169,7 @@ export function emptySave(): GameSave {
   return {
     characters: [],
     activeId: null,
+    inScene: [],
     rooms: starterRooms(),
     lastRoom: "playroom",
     basket: [],
@@ -159,6 +217,10 @@ function normaliseItem(raw: Partial<PlacedFurniture> & { id: string }): PlacedFu
     on: bool(raw.on, true),
     stored: things(raw.stored),
     strokes: strokes(raw.strokes),
+    planted: typeof raw.planted === "string" && CROPS[raw.planted] ? raw.planted : null,
+    stage: Math.max(0, Math.round(num(raw.stage, 0))),
+    wateredAt: Math.max(0, num(raw.wateredAt, 0)),
+    mode: Math.max(0, Math.round(num(raw.mode, 0))),
   };
 }
 
@@ -172,10 +234,7 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
       items: raw
         .filter((id): id is string => typeof id === "string" && allowed.has(id))
         .map(placeFurniture),
-      avatarX: AVATAR_HOME.x,
-      avatarY: AVATAR_HOME.y,
-      avatarPose: "stand",
-      avatarSeat: null,
+      places: {},
     };
   }
 
@@ -186,20 +245,41 @@ function normaliseRoom(raw: unknown, room: RoomId): RoomState {
           .filter((i): i is PlacedFurniture => !!i && typeof i.id === "string" && allowed.has(i.id))
           .map(normaliseItem)
       : starterRoom(room).items;
-    const pose: AvatarPose =
-      r.avatarPose === "sit" || r.avatarPose === "lie" ? r.avatarPose : "stand";
-    // A seat that is no longer in the room, or that nobody is on, is no seat at all.
-    const seat =
-      pose !== "stand" && typeof r.avatarSeat === "string" && items.some((i) => i.id === r.avatarSeat)
-        ? r.avatarSeat
-        : null;
-    return {
-      items,
-      avatarX: num(r.avatarX, AVATAR_HOME.x),
-      avatarY: num(r.avatarY, AVATAR_HOME.y),
-      avatarPose: pose,
-      avatarSeat: seat,
+    const onFloor = (id: unknown) => typeof id === "string" && items.some((i) => i.id === id);
+    const place = (from: {
+      x?: unknown;
+      y?: unknown;
+      pose?: unknown;
+      seat?: unknown;
+    }): Placement => {
+      const pose: AvatarPose = from.pose === "sit" || from.pose === "lie" ? from.pose : "stand";
+      return {
+        x: num(from.x, AVATAR_HOME.x),
+        y: num(from.y, AVATAR_HOME.y),
+        pose,
+        // A seat that is no longer in the room, or that nobody is on, is no seat at all.
+        seat: pose !== "stand" && onFloor(from.seat) ? (from.seat as string) : null,
+      };
     };
+
+    const places: Record<string, Placement> = {};
+    const legacy = raw as { avatarX?: unknown; avatarPose?: unknown };
+    if (legacy.avatarX !== undefined || legacy.avatarPose !== undefined) {
+      const old = raw as Record<string, unknown>;
+      places[LEGACY_SOLO] = place({
+        x: old.avatarX,
+        y: old.avatarY,
+        pose: old.avatarPose,
+        seat: old.avatarSeat,
+      });
+    }
+    if (r.places && typeof r.places === "object") {
+      for (const [id, saved] of Object.entries(r.places)) {
+        if (saved && typeof saved === "object") places[id] = place(saved);
+      }
+    }
+
+    return { items, places };
   }
 
   return starterRoom(room);
@@ -246,14 +326,31 @@ export function loadSave(): GameSave {
     }
 
     const activeId = characters.some((c) => c.id === parsed.activeId) ? parsed.activeId! : characters[0]?.id ?? null;
+
+    const known = new Set(characters.map((c) => c.id));
+    for (const id of ROOM_ORDER) {
+      const places = rooms[id].places;
+      // The one character an old save had in each room was whoever was active at the time.
+      const solo = places[LEGACY_SOLO];
+      delete places[LEGACY_SOLO];
+      if (solo && activeId && !places[activeId]) places[activeId] = solo;
+      // Somebody who has since been deleted leaves a spot behind; nobody stands on it.
+      for (const who of Object.keys(places)) if (!known.has(who)) delete places[who];
+    }
+
+    const inScene = (Array.isArray(parsed.inScene) ? parsed.inScene : [])
+      .filter((id): id is string => typeof id === "string" && known.has(id))
+      .filter((id, i, all) => all.indexOf(id) === i);
+    // Whoever "Dress up" would edit has to be somebody she can see.
+    if (activeId && !inScene.includes(activeId)) inScene.unshift(activeId);
     const lastRoom = ROOM_ORDER.includes(parsed.lastRoom as RoomId) ? (parsed.lastRoom as RoomId) : "playroom";
-    const timeOfDay = TIME_ORDER.includes(parsed.timeOfDay as TimeOfDay)
-      ? (parsed.timeOfDay as TimeOfDay)
-      : "day";
+    const savedTime = (parsed.timeOfDay as string) === LEGACY_DUSK ? "night" : parsed.timeOfDay;
+    const timeOfDay = TIME_ORDER.includes(savedTime as TimeOfDay) ? (savedTime as TimeOfDay) : "day";
 
     return {
       characters,
       activeId,
+      inScene: inScene.slice(0, MAX_CAST),
       rooms,
       lastRoom,
       basket: things(parsed.basket).slice(0, BASKET_LIMIT),

@@ -44,6 +44,21 @@ function cakeArt(sponge: string, icing: string, topper: string): ReactElement {
   );
 }
 
+/**
+ * A seed packet, with a picture of what it grows on the front. That picture is the only
+ * label a child needs to tell one packet from another, and it says what will come up.
+ */
+function seedPacket(inside: () => ReactElement): ReactElement {
+  return (
+    <g>
+      <path d="M-13,-17 L13,-17 L13,17 L-13,17 Z" fill="#e8dcc4" />
+      <path d="M-13,-17 L13,-17 L13,-9 L-13,-9 Z" fill="#cbb994" />
+      <path d="M-13,-9 h26" stroke="#b5a37e" strokeWidth={1.4} strokeDasharray="3 3" />
+      <g transform="translate(0 5) scale(0.44)">{inside()}</g>
+    </g>
+  );
+}
+
 /** The bowl that a cooked dish is served in — same shape every time so dishes read as a set. */
 function bowl(colour: string): ReactElement {
   return (
@@ -596,6 +611,55 @@ export const THINGS: Record<string, Thing> = {
     taste: "yum",
     art: () => cakeArt("#ffe08a", "#ffd93f", "#9be07a"),
   },
+  // ---------------- seeds ----------------
+  lettuceSeeds: {
+    id: "lettuceSeeds",
+    name: "Lettuce seeds",
+    taste: "yuck",
+    art: () => seedPacket(THINGS.lettuce.art),
+  },
+
+  carrotSeeds: {
+    id: "carrotSeeds",
+    name: "Carrot seeds",
+    taste: "yuck",
+    art: () => seedPacket(THINGS.carrot.art),
+  },
+
+  strawberrySeeds: {
+    id: "strawberrySeeds",
+    name: "Strawberry seeds",
+    taste: "yuck",
+    art: () => seedPacket(THINGS.strawberry.art),
+  },
+
+  tomatoSeeds: {
+    id: "tomatoSeeds",
+    name: "Tomato seeds",
+    taste: "yuck",
+    art: () => seedPacket(THINGS.tomato.art),
+  },
+
+  potatoSeeds: {
+    id: "potatoSeeds",
+    name: "Potato seeds",
+    taste: "yuck",
+    art: () => seedPacket(THINGS.potato.art),
+  },
+
+  appleSeeds: {
+    id: "appleSeeds",
+    name: "Apple pips",
+    taste: "yuck",
+    art: () => seedPacket(THINGS.apple.art),
+  },
+
+  lemonSeeds: {
+    id: "lemonSeeds",
+    name: "Lemon pips",
+    taste: "yuck",
+    art: () => seedPacket(THINGS.lemon.art),
+  },
 };
 
 /**
@@ -713,6 +777,17 @@ export const STALL_STOCK: Record<string, string[]> = {
   vegStall: ["carrot", "tomato", "potato", "lettuce"],
   bakeryStall: ["bread", "flour", "sugar", "cocoa"],
   dairyStall: ["milk", "cheese", "egg", "butter"],
+  // In the garden rather than the market: the market's four stalls already fill the width,
+  // and a seed table belongs where the growing happens anyway.
+  seedTable: [
+    "lettuceSeeds",
+    "carrotSeeds",
+    "strawberrySeeds",
+    "tomatoSeeds",
+    "potatoSeeds",
+    "appleSeeds",
+    "lemonSeeds",
+  ],
 };
 
 export const ALL_THING_IDS = new Set(Object.keys(THINGS));

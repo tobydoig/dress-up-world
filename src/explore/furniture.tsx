@@ -79,6 +79,9 @@ export const CONTAINERS = new Set([
 /** Pieces that sell things. Tapping one opens its stall. */
 export const STALLS = new Set(Object.keys(STALL_STOCK));
 
+/** Tapping one looks through it. There is only ever anything to see after dark. */
+export const SKYWATCH = new Set(["telescope"]);
+
 /** Lamps you can switch on and off. */
 export const LAMPS = new Set(["deskLamp", "bedsideLamp", "floorLamp"]);
 
@@ -921,6 +924,29 @@ export const FURNITURE: Record<string, FurnitureRender> = {
       </g>
     );
   },
+
+  telescope: () => (
+    <g>
+      {hitPad(276, 120, 96, 112)}
+      {/* Tripod */}
+      <path
+        d="M324,186 l-26,46 M324,186 l26,46 M324,186 v46"
+        stroke="#5b6180"
+        strokeWidth={5}
+        strokeLinecap="round"
+      />
+      <circle cx={324} cy={184} r={7} fill="#8b93b5" />
+      {/* The tube, tipped up at the sky. Everything about this piece is that angle. */}
+      <g transform="rotate(-34 324 176)">
+        <rect x={286} y={164} width={80} height={24} rx={12} fill="#3b2470" />
+        <rect x={286} y={164} width={80} height={9} rx={4.5} fill="#5a3b9c" />
+        <rect x={358} y={160} width={16} height={32} rx={6} fill="#8b93b5" />
+        <circle cx={366} cy={176} r={11} fill="#7fd4ff" />
+        <circle cx={366} cy={176} r={6} fill="#bfe8ff" />
+        <rect x={276} y={168} width={14} height={16} rx={5} fill="#8b93b5" />
+      </g>
+    </g>
+  ),
 
   deskLamp: (c) => (
     <g>

@@ -1719,3 +1719,35 @@ button {
     animation: none;
   }
 }
+
+/* ---------- who is out in the room ---------- */
+
+.item-art {
+  position: relative;
+}
+
+.item-tick {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  line-height: 1;
+  background: var(--yellow);
+  color: #3a2a06;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* Each character starts their breathing and blinking at their own moment, so three of them
+   standing together don't rise and fall as one animal. */
+.av-breathe {
+  animation-delay: var(--phase-breathe, 0s);
+}
+
+.av-blink {
+  animation-delay: var(--phase-blink, 0s);
+}

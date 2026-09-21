@@ -49,7 +49,10 @@ import {
 import type { AvatarLook } from "../data/wardrobe";
 import {
   BASKET_LIMIT,
+  MAX_CAST,
+  castHome,
   type AvatarPose,
+  type Placement,
   type PlacedFurniture,
   type RoomState,
   type SavedCharacter,
@@ -195,7 +198,7 @@ const STARS: Array<[number, number, number]> = [
   [306, 22, 2.4], [352, 52, 1.6], [196, 18, 2], [22, 72, 1.7],
 ];
 
-type DragTarget = { kind: "avatar" } | { kind: "furniture"; id: string };
+type DragTarget = { kind: "avatar"; id: string } | { kind: "furniture"; id: string };
 
 /**
  * Which panel is showing. Cupboards deliberately don't have one: you open them and drag things
@@ -212,7 +215,7 @@ type ThingSource =
 type DropTarget =
   | { kind: "container"; id: string }
   | { kind: "plot"; id: string }
-  | { kind: "mouth" };
+  | { kind: "mouth"; id: string };
 
 interface ThingDrag {
   thingId: string;
@@ -254,7 +257,7 @@ interface DragState {
   /** The wrapper holding what is inside an open container, which travels with it. */
   contents: SVGGElement | null;
   /** Set when someone is sitting on the dragged piece and has to be carried along. */
-  rider: { node: SVGGElement; id: string; facing: number } | null;
+  rider: { node: SVGGElement; id: string; facing: number; who: string } | null;
   /** Where the drag has got to: a piece's offset, or the character's position. */
   x: number;
   y: number;
@@ -280,6 +283,22 @@ function pieceTransform(dx: number, dy: number): string {
 
 const AVATAR_SCALE = 0.47;
 
+/**
+ * Breathing and blinking start the moment the element appears, so three characters who came
+ * out together would rise and fall as one animal. Spreading them by their place in the line
+ * rather than by anything hashed guarantees they are as far apart as three can be — and the
+ * two loops get their own offsets, or the first and last would still breathe together while
+ * only their blinking differed.
+ */
+const BREATHE_S = 3.6;
+const BLINK_S = 5.4;
+
+function phaseOf(index: number, count: number): { breathe: number; blink: number } {
+  const at = index / Math.max(1, count);
+  return { breathe: at * BREATHE_S, blink: at * BLINK_S };
+}
+
+
 function characterTransform(x: number, y: number, pose: AvatarPose): string {
   return (
     "translate(" + x + " " + y + ")" +
@@ -293,12 +312,12 @@ function characterTransform(x: number, y: number, pose: AvatarPose): string {
  * measured off the page, so it costs nothing to ask for on every pointer move. Lying down
  * rotates the whole figure a quarter turn, which puts the head out to the side.
  */
-function faceAt(room: RoomState): { x: number; y: number; r: number } {
+function faceAt(place: Placement): { x: number; y: number; r: number } {
   const reach = AVATAR_SCALE * (HEAD.cy - 380);
   const r = AVATAR_SCALE * HEAD.r;
-  return room.avatarPose === "lie"
-    ? { x: room.avatarX + reach, y: room.avatarY, r }
-    : { x: room.avatarX, y: room.avatarY + reach, r };
+  return place.pose === "lie"
+    ? { x: place.x + reach, y: place.y, r }
+    : { x: place.x, y: place.y + reach, r };
 }
 
 /**
@@ -420,21 +439,26 @@ const Piece = memo(function Piece({
 
 /** Memoised for the same reason: dragging the furniture must not redraw the whole character. */
 const Character = memo(function Character({
+  id,
   look,
   uid,
   x,
   y,
   pose,
+  phase,
   chewing,
   mouthOpen,
   dragging,
   onGrab,
 }: {
+  id: string;
   look: AvatarLook;
   uid: string;
   x: number;
   y: number;
   pose: AvatarPose;
+  /** How far into each of the two idle loops this one starts. See `phaseOf`. */
+  phase: { breathe: number; blink: number };
   chewing: boolean;
   mouthOpen: boolean;
   dragging: boolean;
@@ -443,7 +467,14 @@ const Character = memo(function Character({
   return (
     <g
       className={"draggable character" + (dragging ? " is-dragging" : "")}
+      data-avatar={id}
       transform={characterTransform(x, y, pose)}
+      style={
+        {
+          ["--phase-breathe"]: -phase.breathe.toFixed(2) + "s",
+          ["--phase-blink"]: -phase.blink.toFixed(2) + "s",
+        } as CSSProperties
+      }
       onPointerDown={onGrab}
     >
       <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} mouthOpen={mouthOpen} />
@@ -619,7 +650,6 @@ const RoomFittings = memo(function RoomFittings({ room, time }: { room: RoomDef;
 });
 
 export function ExploreMode({
-  look,
   roomId,
   room: roomState,
   basket,
@@ -643,11 +673,12 @@ export function ExploreMode({
   onHarvest,
   characters,
   activeId,
-  onSwitchCharacter,
+  inScene,
+  onToggleInScene,
+  onFocusCharacter,
   onNewCharacter,
   onDesign,
 }: {
-  look: AvatarLook | null;
   roomId: RoomId;
   room: RoomState;
   basket: string[];
@@ -658,6 +689,7 @@ export function ExploreMode({
   onUpdateFurniture: (furnitureId: string, patch: Partial<PlacedFurniture>) => void;
   onRemoveFurniture: (furnitureId: string) => void;
   onMoveAvatar: (
+    id: string,
     x: number,
     y: number,
     settle?: { pose: AvatarPose; seat: string | null }
@@ -675,7 +707,9 @@ export function ExploreMode({
   onHarvest: (plotId: string) => void;
   characters: SavedCharacter[];
   activeId: string | null;
-  onSwitchCharacter: (id: string) => void;
+  inScene: string[];
+  onToggleInScene: (id: string) => void;
+  onFocusCharacter: (id: string) => void;
   onNewCharacter: () => void;
   onDesign: () => void;
 }) {
@@ -687,7 +721,8 @@ export function ExploreMode({
   const [pot, setPot] = useState<number[]>([]);
   const [padId, setPadId] = useState<string | null>(null);
   const [reaction, setReaction] = useState<string | null>(null);
-  const [chewing, setChewing] = useState(false);
+  /** Who is mid-mouthful, if anyone. */
+  const [chewingId, setChewingId] = useState<string | null>(null);
   /** A thing being carried on a fingertip, in client pixels, for drawing it under the finger. */
   const [held, setHeld] = useState<{
     thingId: string;
@@ -718,8 +753,31 @@ export function ExploreMode({
   // it was before anything moved.
   const basketRef = useRef(basket);
   basketRef.current = basket;
-  const lookRef = useRef(look);
-  lookRef.current = look;
+  /**
+   * Everyone who is out, with the look they were saved with and where they are standing in
+   * this room. Somebody who has never been in here yet has no saved spot, so they take their
+   * place in the line-up — which is the middle of the floor when there is only one of them,
+   * exactly where a lone character has always stood.
+   */
+  const cast: Array<{ id: string; look: AvatarLook; place: Placement }> = inScene
+    .map((id, i) => {
+      const character = characters.find((c) => c.id === id);
+      if (!character) return null;
+      return {
+        id,
+        look: character.look,
+        place: roomState.places[id] ?? castHome(i, inScene.length),
+      };
+    })
+    .filter((member): member is { id: string; look: AvatarLook; place: Placement } => member !== null);
+
+  const castRef = useRef(cast);
+  castRef.current = cast;
+
+  /** Where one of them is standing, whether or not the room has a saved spot for them. */
+  function placeOf(id: string): Placement | null {
+    return castRef.current.find((member) => member.id === id)?.place ?? null;
+  }
 
   const room = ROOMS[roomId];
 
@@ -823,8 +881,10 @@ export function ExploreMode({
     let bounds: DragState["bounds"];
 
     if (target.kind === "avatar") {
-      originX = roomStateRef.current.avatarX;
-      originY = roomStateRef.current.avatarY;
+      const place = placeOf(target.id);
+      if (!place) return;
+      originX = place.x;
+      originY = place.y;
       bounds = AVATAR_BOUNDS;
     } else {
       const item = roomStateRef.current.items.find((i) => i.id === target.id);
@@ -885,10 +945,14 @@ export function ExploreMode({
       const svg = svgRef.current;
       contents = svg?.querySelector<SVGGElement>('[data-contents="' + target.id + '"]') ?? null;
       const current = roomStateRef.current;
-      if (current.avatarSeat === target.id) {
-        const riderNode = svg?.querySelector<SVGGElement>("g.character") ?? null;
+      const who = riderOf(target.id);
+      if (who) {
+        const riderNode =
+          svg?.querySelector<SVGGElement>('g.character[data-avatar="' + who + '"]') ?? null;
         const item = current.items.find((i) => i.id === target.id);
-        if (riderNode && item) rider = { node: riderNode, id: target.id, facing: item.facing };
+        if (riderNode && item) {
+          rider = { node: riderNode, id: target.id, facing: item.facing, who };
+        }
       }
     }
 
@@ -950,12 +1014,12 @@ export function ExploreMode({
 
       // The moves only moved the DOM, so this is where the save finds out where things are.
       if (drag.target.kind === "avatar") {
-        onMoveAvatar(drag.x, drag.y);
+        onMoveAvatar(drag.target.id, drag.x, drag.y);
       } else {
         onMoveFurniture(drag.target.id, drag.x, drag.y);
         if (drag.rider) {
           const place = seatPlaceAt(drag.rider.id, drag.rider.facing, drag.x, drag.y);
-          if (place) onMoveAvatar(place.x, place.y);
+          if (place) onMoveAvatar(drag.rider.who, place.x, place.y);
         }
       }
 
@@ -983,7 +1047,7 @@ export function ExploreMode({
         return;
       }
 
-      if (drag.target.kind === "avatar") settleAvatar(drag.x, drag.y);
+      if (drag.target.kind === "avatar") settleAvatar(drag.target.id, drag.x, drag.y);
       playPop();
     };
 
@@ -1001,7 +1065,7 @@ export function ExploreMode({
       rider,
       x: originX,
       y: originY,
-      pose: roomStateRef.current.avatarPose,
+      pose: (target.kind === "avatar" && placeOf(target.id)?.pose) || "stand",
       overBin: false,
       overPlot: null,
       binRect: null,
@@ -1013,7 +1077,7 @@ export function ExploreMode({
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
 
-    setDraggingKey(target.kind === "avatar" ? "avatar" : target.id);
+    setDraggingKey(target.kind === "avatar" ? "avatar:" + target.id : target.id);
     playTap();
   }
 
@@ -1046,9 +1110,9 @@ export function ExploreMode({
 
   /** Throw a piece away, standing the character up first if they were sitting on it. */
   function binFurniture(id: string) {
-    const current = roomStateRef.current;
-    if (current.avatarSeat === id) {
-      onMoveAvatar(current.avatarX, current.avatarY, { pose: "stand", seat: null });
+    for (const member of castRef.current) {
+      if (member.place.seat !== id) continue;
+      onMoveAvatar(member.id, member.place.x, member.place.y, { pose: "stand", seat: null });
     }
     if (tray?.id === id) closeTray();
     if (padId === id) setPadId(null);
@@ -1063,9 +1127,12 @@ export function ExploreMode({
   function onTap(target: DragTarget, x: number, y: number) {
     const current = roomStateRef.current;
     if (target.kind === "avatar") {
+      // Touching one of them is how she says which one she means — so "Dress up" goes on to
+      // edit whoever she last had her finger on, with no extra control to find.
+      onFocusCharacterRef.current(target.id);
       // Tap the character to get them back up again.
-      if (current.avatarPose !== "stand") {
-        onMoveAvatar(x, y - 18, { pose: "stand", seat: null });
+      if (placeOf(target.id)?.pose !== "stand") {
+        onMoveAvatar(target.id, x, y - 18, { pose: "stand", seat: null });
         playSparkle();
       } else {
         playPop();
@@ -1154,9 +1221,10 @@ export function ExploreMode({
       const facing = (item.facing + 1) % turns;
       onUpdateFurniture(id, { facing });
       // The seat moves when the chair turns, so whoever is on it has to move too.
-      if (current.avatarSeat === id) {
+      const rider = riderOf(id);
+      if (rider) {
         const place = seatPlace({ ...item, facing });
-        if (place) onMoveAvatar(place.x, place.y, { pose: place.pose, seat: id });
+        if (place) onMoveAvatar(rider, place.x, place.y, { pose: place.pose, seat: id });
       }
       playTurn();
       return;
@@ -1165,14 +1233,19 @@ export function ExploreMode({
     playPop();
   }
 
-  /** After the character is dropped, sit or lie them on whatever they landed on. */
-  function settleAvatar(x: number, y: number) {
+  /** Who is sitting or lying on a given piece, if anyone. */
+  function riderOf(furnitureId: string): string | null {
+    return castRef.current.find((member) => member.place.seat === furnitureId)?.id ?? null;
+  }
+
+  /** After a character is dropped, sit or lie them on whatever they landed on. */
+  function settleAvatar(who: string, x: number, y: number) {
     const current = roomStateRef.current;
 
     // Dragging someone who is already sitting or lying always frees them. Otherwise the snap
     // radius grabs them straight back onto the seat and there's no way off it.
-    if (current.avatarPose !== "stand") {
-      onMoveAvatar(x, y, { pose: "stand", seat: null });
+    if (placeOf(who)?.pose !== "stand") {
+      onMoveAvatar(who, x, y, { pose: "stand", seat: null });
       playPop();
       return;
     }
@@ -1184,6 +1257,10 @@ export function ExploreMode({
       const zone = seatZone(item);
       const place = seatPlace(item);
       if (!zone || !place) continue;
+      // One to a chair. Two characters in the same seat is a single blurred character, and
+      // dragging the chair afterwards could only ever take one of them with it.
+      const taken = riderOf(item.id);
+      if (taken !== null && taken !== who) continue;
       const distance = Math.hypot(x - zone.x, y - zone.y);
       if (distance < bestDistance) {
         bestDistance = distance;
@@ -1192,7 +1269,7 @@ export function ExploreMode({
     }
 
     if (best) {
-      onMoveAvatar(best.x, best.y, { pose: best.pose, seat: best.id });
+      onMoveAvatar(who, best.x, best.y, { pose: best.pose, seat: best.id });
       playSparkle();
     }
   }
@@ -1231,12 +1308,18 @@ export function ExploreMode({
       if (bed && !bed.planted) return { kind: "plot", id: bed.id };
     }
 
-    // The face wins any tie. A cupboard standing where someone's head is shouldn't get fed.
-    if (lookRef.current) {
-      const face = faceAt(roomStateRef.current);
+    // A face wins any tie. A cupboard standing where someone's head is shouldn't get fed.
+    // With more than one of them out, the food goes to whichever face it is closest to.
+    let mouth: { id: string; distance: number } | null = null;
+    for (const member of castRef.current) {
+      const face = faceAt(member.place);
+      const distance = Math.hypot(at.x - face.x, at.y - face.y);
       // Generously wide: she is aiming at a face, not at a pair of lips.
-      if (Math.hypot(at.x - face.x, at.y - face.y) <= face.r * 1.5) return { kind: "mouth" };
+      if (distance <= face.r * 1.5 && (!mouth || distance < mouth.distance)) {
+        mouth = { id: member.id, distance };
+      }
     }
+    if (mouth) return { kind: "mouth", id: mouth.id };
 
     for (const item of openContainers()) {
       const box = CONTAINER_DROP[item.id];
@@ -1299,7 +1382,7 @@ export function ExploreMode({
 
   function dropThing(from: ThingSource, target: DropTarget | null) {
     if (target?.kind === "mouth") {
-      eat(from);
+      eat(target.id, from);
       return;
     }
 
@@ -1344,8 +1427,8 @@ export function ExploreMode({
     playPop();
   }
 
-  /** Eats whatever was dragged to the face, from the basket or straight off a shelf. */
-  function eat(from: ThingSource) {
+  /** Whoever the food was dragged to eats it, from the basket or straight off a shelf. */
+  function eat(who: string, from: ThingSource) {
     const thingId =
       from.kind === "basket"
         ? basketRef.current[from.index]
@@ -1361,7 +1444,7 @@ export function ExploreMode({
     }
 
     setReaction("Yum!");
-    setChewing(true);
+    setChewingId(who);
     playNom();
     if (from.kind === "basket") onEat(from.index);
     else onEatFrom(from.id, from.index);
@@ -1431,10 +1514,10 @@ export function ExploreMode({
   }, [reaction]);
 
   useEffect(() => {
-    if (!chewing) return;
-    const timer = setTimeout(() => setChewing(false), CHEW_MS);
+    if (chewingId === null) return;
+    const timer = setTimeout(() => setChewingId(null), CHEW_MS);
     return () => clearTimeout(timer);
-  }, [chewing]);
+  }, [chewingId]);
 
   /**
    * The scene's pieces are memoised, which only works if the handler they are given keeps its
@@ -1445,13 +1528,18 @@ export function ExploreMode({
   startDragRef.current = startDrag;
   const startThingDragRef = useRef(startThingDrag);
   startThingDragRef.current = startThingDrag;
+  const onFocusCharacterRef = useRef(onFocusCharacter);
+  onFocusCharacterRef.current = onFocusCharacter;
 
   const grabPiece = useCallback((e: ReactPointerEvent<SVGGElement>, id: string) => {
     startDragRef.current(e, { kind: "furniture", id });
   }, []);
 
+  // Which character this is comes off the element rather than out of a closure, so the
+  // handler stays the same object for all three of them and the memo still holds.
   const grabAvatar = useCallback((e: ReactPointerEvent<SVGGElement>) => {
-    startDragRef.current(e, { kind: "avatar" });
+    const who = e.currentTarget.dataset.avatar;
+    if (who) startDragRef.current(e, { kind: "avatar", id: who });
   }, []);
 
   const grabThing = useCallback(
@@ -1489,14 +1577,14 @@ export function ExploreMode({
           </button>
           <button
             className="chip-btn chip-ghost"
-            aria-label="Choose who is here"
+            aria-label={"Choose who is here — " + inScene.length + " of " + characters.length + " out"}
             onClick={() => {
               sheetOpenedAt.current = Date.now();
               setCastOpen(true);
               playTap();
             }}
           >
-            👥 {characters.length}
+            👥 {inScene.length}
           </button>
           <button
             className="chip-btn chip-mode"
@@ -1574,19 +1662,26 @@ export function ExploreMode({
               />
             ))}
 
-            {look && (
-              <Character
-                look={look}
-                uid={"room-" + roomId}
-                x={roomState.avatarX}
-                y={roomState.avatarY}
-                pose={roomState.avatarPose}
-                chewing={chewing}
-                mouthOpen={held?.over?.kind === "mouth"}
-                dragging={draggingKey === "avatar"}
-                onGrab={grabAvatar}
-              />
-            )}
+            {/* Drawn back to front, so whoever is standing nearest the front of the room is
+                the one in front — and the one your finger lands on. */}
+            {[...cast]
+              .sort((a, b) => a.place.y - b.place.y)
+              .map((member) => (
+                <Character
+                  key={member.id}
+                  id={member.id}
+                  look={member.look}
+                  uid={"room-" + roomId + "-" + member.id}
+                  x={member.place.x}
+                  y={member.place.y}
+                  pose={member.place.pose}
+                  phase={phaseOf(inScene.indexOf(member.id), cast.length)}
+                  chewing={chewingId === member.id}
+                  mouthOpen={held?.over?.kind === "mouth" && held.over.id === member.id}
+                  dragging={draggingKey === "avatar:" + member.id}
+                  onGrab={grabAvatar}
+                />
+              ))}
 
             {/* Where the thing on the end of her finger can be let go. */}
             {held &&
@@ -1890,24 +1985,40 @@ export function ExploreMode({
                 ✕
               </button>
             </div>
+            <p className="sheet-hint">
+              Tap to bring someone out, or to send them back. Up to {MAX_CAST} at a time.
+            </p>
             <div className="sheet-scroll">
               <div className="sheet-grid">
-                {characters.map((c) => (
-                  <button
-                    key={c.id}
-                    className={"item" + (c.id === activeId ? " is-active" : "")}
-                    onClick={() => {
-                      onSwitchCharacter(c.id);
-                      setCastOpen(false);
-                      playSparkle();
-                    }}
-                  >
-                    <span className="item-art">
-                      <Avatar look={c.look} uid={"cast-" + c.id} animate={false} crop="10 6 180 220" />
-                    </span>
-                    <span className="item-name">{c.name}</span>
-                  </button>
-                ))}
+                {characters.map((c) => {
+                  const out = inScene.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      className={"item" + (out ? " is-active" : "")}
+                      aria-pressed={out}
+                      onClick={() => {
+                        onToggleInScene(c.id);
+                        playSparkle();
+                      }}
+                    >
+                      <span className="item-art">
+                        <Avatar
+                          look={c.look}
+                          uid={"cast-" + c.id}
+                          animate={false}
+                          crop="10 6 180 220"
+                        />
+                        {/* A tick for "out here with me", and the dress for the one the
+                            Dress up button would take you to. */}
+                        {out && (
+                          <span className="item-tick">{c.id === activeId ? "👗" : "✓"}</span>
+                        )}
+                      </span>
+                      <span className="item-name">{c.name}</span>
+                    </button>
+                  );
+                })}
                 <button
                   className="item"
                   onClick={() => {

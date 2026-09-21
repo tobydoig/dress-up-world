@@ -6,9 +6,10 @@ import { CROPS } from "./data/growing";
 import { DEFAULT_LOOK, randomLook, type AvatarLook } from "./data/wardrobe";
 import type { RoomId } from "./data/rooms";
 import {
-  AVATAR_HOME,
   BASKET_LIMIT,
+  MAX_CAST,
   TIME_ORDER,
+  castHome,
   loadSave,
   newId,
   persist,
@@ -16,6 +17,7 @@ import {
   type AvatarPose,
   type GameSave,
   type PlacedFurniture,
+  type RoomState,
 } from "./lib/storage";
 import { isMuted, playPop, setMuted } from "./lib/sound";
 
@@ -83,6 +85,9 @@ export function App() {
         ...prev,
         characters: [...prev.characters, { id, name: "Character " + (prev.characters.length + 1), look }],
         activeId: id,
+        // Somebody just made has to be somebody she can see, so they come out even if that
+        // means the one who has been out longest goes back in.
+        inScene: [...prev.inScene, id].slice(-MAX_CAST),
       };
     });
     setMode("explore");
@@ -94,10 +99,32 @@ export function App() {
     setLook(DEFAULT_LOOK);
   }
 
-  /** Switch who is in the room, without going through design mode. */
-  function switchCharacter(id: string) {
+  /**
+   * Out into the room, or back in again — and whoever came out last is the one "Dress up"
+   * will edit, so touching a face is all it takes to choose who you are dressing.
+   *
+   * The last one out stays out. An empty room with a "Dress up" button that edits nobody in
+   * particular is a dead end she would have no way back from.
+   */
+  function toggleInScene(id: string) {
     if (!save.characters.some((c) => c.id === id)) return;
-    setSave((prev) => ({ ...prev, activeId: id }));
+    setSave((prev) => {
+      if (prev.inScene.includes(id)) {
+        if (prev.inScene.length < 2) return prev;
+        const inScene = prev.inScene.filter((c) => c !== id);
+        return { ...prev, inScene, activeId: prev.activeId === id ? inScene[0] : prev.activeId };
+      }
+      // Full up: the one who has been out longest makes way.
+      const inScene = [...prev.inScene, id].slice(-MAX_CAST);
+      return { ...prev, inScene, activeId: id };
+    });
+    setEditingId(id);
+  }
+
+  /** Whoever she last touched in the room is the one "Dress up" edits. */
+  function focusCharacter(id: string) {
+    if (save.activeId === id) return;
+    setSave((prev) => (prev.characters.some((c) => c.id === id) ? { ...prev, activeId: id } : prev));
     setEditingId(id);
   }
 
@@ -106,14 +133,29 @@ export function App() {
     if (!chosen) return;
     setEditingId(id);
     setLook(chosen.look);
-    setSave((prev) => ({ ...prev, activeId: id }));
+    setSave((prev) => ({
+      ...prev,
+      activeId: id,
+      // Picking someone to dress is also picking them to play with, so they come out.
+      inScene: prev.inScene.includes(id) ? prev.inScene : [...prev.inScene, id].slice(-MAX_CAST),
+    }));
   }
 
   function deleteCharacter(id: string) {
     setSave((prev) => {
       const characters = prev.characters.filter((c) => c.id !== id);
       const activeId = prev.activeId === id ? characters[0]?.id ?? null : prev.activeId;
-      return { ...prev, characters, activeId };
+      let inScene = prev.inScene.filter((c) => c !== id);
+      if (inScene.length === 0 && activeId) inScene = [activeId];
+      // Their spot in every room goes with them, or the next character to take that id
+      // (there won't be one, but the room shouldn't be holding a place for a ghost) inherits it.
+      const rooms = {} as GameSave["rooms"];
+      for (const [room, state] of Object.entries(prev.rooms) as Array<[RoomId, RoomState]>) {
+        const places = { ...state.places };
+        delete places[id];
+        rooms[room] = { ...state, places };
+      }
+      return { ...prev, characters, activeId, inScene, rooms };
     });
     if (editingId === id) setEditingId(null);
   }
@@ -163,24 +205,45 @@ export function App() {
    * what they have landed on. Leaving it out — which is what every frame of a drag does —
    * moves them without disturbing what they are sitting on.
    */
-  function moveAvatar(x: number, y: number, settle?: { pose: AvatarPose; seat: string | null }) {
-    updateRoom((room) => ({
-      ...room,
-      avatarX: x,
-      avatarY: y,
-      avatarPose: settle ? settle.pose : room.avatarPose,
-      avatarSeat: settle ? settle.seat : room.avatarSeat,
-    }));
+  function moveAvatar(
+    id: string,
+    x: number,
+    y: number,
+    settle?: { pose: AvatarPose; seat: string | null }
+  ) {
+    updateRoom((room) => {
+      const was = room.places[id];
+      return {
+        ...room,
+        places: {
+          ...room.places,
+          [id]: {
+            x,
+            y,
+            pose: settle ? settle.pose : was?.pose ?? "stand",
+            seat: settle ? settle.seat : was?.seat ?? null,
+          },
+        },
+      };
+    });
   }
 
   /** Put everything back where it started, for when the room gets into a state. */
   function tidyUp() {
-    updateRoom((room) => ({
-      items: room.items.map((i) => ({ ...i, dx: 0, dy: 0 })),
-      avatarX: AVATAR_HOME.x,
-      avatarY: AVATAR_HOME.y,
-      avatarPose: "stand",
-      avatarSeat: null,
+    // Written against prev rather than the render's own save, so who is out is read at the
+    // moment the room is rebuilt rather than whenever this handler was made.
+    setSave((prev) => ({
+      ...prev,
+      rooms: {
+        ...prev.rooms,
+        [prev.lastRoom]: {
+          items: prev.rooms[prev.lastRoom].items.map((i) => ({ ...i, dx: 0, dy: 0 })),
+          // Everyone back into the line-up, standing, off whatever they were sitting on.
+          places: Object.fromEntries(
+            prev.inScene.map((id, i) => [id, castHome(i, prev.inScene.length)])
+          ),
+        },
+      },
     }));
   }
 
@@ -345,7 +408,6 @@ export function App() {
         />
       ) : (
         <ExploreMode
-          look={activeLook}
           roomId={save.lastRoom}
           room={save.rooms[save.lastRoom]}
           basket={save.basket}
@@ -369,7 +431,9 @@ export function App() {
           onHarvest={harvestPlot}
           characters={save.characters}
           activeId={save.activeId}
-          onSwitchCharacter={switchCharacter}
+          inScene={save.inScene}
+          onToggleInScene={toggleInScene}
+          onFocusCharacter={focusCharacter}
           onNewCharacter={() => {
             newCharacter();
             setMode("design");

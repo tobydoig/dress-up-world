@@ -28,6 +28,8 @@ export interface FurnitureCtx {
   mode: number;
   /** Held over a plant that is about to get a drink. Worked out by the room, like `thirsty`. */
   pouring: boolean;
+  /** Just been knocked about: balloons filling back up, blocks in a heap on the floor. */
+  knocked: boolean;
 }
 
 export type FurnitureRender = (ctx: FurnitureCtx) => ReactElement;
@@ -44,6 +46,7 @@ export const CATALOGUE_CTX: FurnitureCtx = {
   thirsty: false,
   mode: 0,
   pouring: false,
+  knocked: false,
 };
 
 /**
@@ -701,13 +704,40 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  blocks: () => (
+  /*
+   * A stack that falls over when tapped and builds itself back up a moment later. The same
+   * five blocks throughout, moved by a transition rather than swapped for a second drawing
+   * — that is what makes them fall AND rise, for the price of one set of positions.
+   *
+   * The higher a block starts, the further and later it goes, which is roughly what happens
+   * and reads far better than all five sliding together.
+   */
+  blocks: (c) => (
     <g>
-      <rect x={116} y={210} width={22} height={22} rx={4} fill="#ff4d5e" />
-      <rect x={140} y={210} width={22} height={22} rx={4} fill="#3aa0ff" />
-      <rect x={128} y={188} width={22} height={22} rx={4} fill="#ffd23f" />
-      <rect x={152} y={188} width={22} height={22} rx={4} fill="#5ed64a" />
-      <rect x={140} y={166} width={22} height={22} rx={4} fill="#c77dff" />
+      {([
+        [116, 210, "#ff4d5e", -16, 20, -24, 0],
+        [140, 210, "#3aa0ff", 18, 20, 16, 0.04],
+        [128, 188, "#ffd23f", -34, 42, -42, 0.08],
+        [152, 188, "#5ed64a", 38, 42, 30, 0.12],
+        [140, 166, "#c77dff", 8, 64, 56, 0.16],
+      ] as Array<[number, number, string, number, number, number, number]>).map(
+        ([x, y, fill, dx, dy, spin, wait]) => (
+          <rect
+            key={x + ":" + y}
+            x={x}
+            y={y}
+            width={22}
+            height={22}
+            rx={4}
+            fill={fill}
+            className="block-piece"
+            style={{
+              transform: c.knocked ? "translate(" + dx + "px, " + dy + "px) rotate(" + spin + "deg)" : "none",
+              transitionDelay: wait + "s",
+            }}
+          />
+        )
+      )}
     </g>
   ),
 
@@ -735,13 +765,19 @@ export const FURNITURE: Record<string, FurnitureRender> = {
     </g>
   ),
 
-  balloons: () => (
+  balloons: (c) => (
     <g>
       <path d="M356,150 q6,30 -2,54 M374,146 q-4,32 2,58" stroke="#ffffff" strokeWidth={2} opacity={0.6} fill="none" />
-      <ellipse cx={356} cy={136} rx={16} ry={19} fill="#ff4d7e" />
-      <ellipse cx={378} cy={128} rx={14} ry={17} fill="#3aa0ff" />
-      <ellipse cx={351} cy={130} rx={5} ry={6} fill="#ffffff" opacity={0.45} />
-      <ellipse cx={373} cy={123} rx={4} ry={5} fill="#ffffff" opacity={0.45} />
+      {/* Each balloon swells from the knot at its bottom while it is filling, so they come
+          back by being blown up rather than by simply being there again. */}
+      <g className={c.knocked ? "balloon-fill" : undefined}>
+        <ellipse cx={356} cy={136} rx={16} ry={19} fill="#ff4d7e" />
+        <ellipse cx={351} cy={130} rx={5} ry={6} fill="#ffffff" opacity={0.45} />
+      </g>
+      <g className={c.knocked ? "balloon-fill balloon-fill-late" : undefined}>
+        <ellipse cx={378} cy={128} rx={14} ry={17} fill="#3aa0ff" />
+        <ellipse cx={373} cy={123} rx={4} ry={5} fill="#ffffff" opacity={0.45} />
+      </g>
     </g>
   ),
 

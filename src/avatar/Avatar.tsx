@@ -128,6 +128,7 @@ export function AvatarLayers({
   pose = "stand",
   chewing = false,
   mouthOpen = false,
+  carrying = false,
 }: {
   look: AvatarLook;
   uid?: string;
@@ -137,6 +138,8 @@ export function AvatarLayers({
   chewing?: boolean;
   /** Something edible is being held over the face — open wide. */
   mouthOpen?: boolean;
+  /** Both arms up and in, because there is a baby in them. */
+  carrying?: boolean;
 }): ReactElement {
   const hair = HAIR_STYLES[look.hairId] ?? HAIR_STYLES.long;
   const eyes = EYE_STYLES[look.eyesId] ?? EYE_STYLES.round;
@@ -158,8 +161,9 @@ export function AvatarLayers({
     // Three nested groups, because each carries its own transform and they would otherwise
     // fight over it: the outer one is whatever fidget is running, then breathing, then the
     // character. Only the whole-body fidgets touch the outer group; the rest reach inside.
-    <g className={idle ? "av-idle av-idle-" + idle : undefined}>
-      {idle && pin()}
+    // Carrying beats fidgeting: an arm that wanders off to scratch an ear drops the baby.
+    <g className={carrying ? "av-carrying" : idle ? "av-idle av-idle-" + idle : undefined}>
+      {(idle || carrying) && pin()}
       <g className={animate && !seated ? "av-breathe" : undefined}>
         {hair.back && (
           <g className="av-hair-back">

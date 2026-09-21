@@ -326,6 +326,41 @@ function maybe(chance: number, value: string): string | null {
   return Math.random() < chance ? value : null;
 }
 
+/**
+ * What a baby can wear. Its own list because the grown-up one is full of things nobody puts
+ * a baby in — a blouse, a shirt and tie, a suit jacket. Kept here beside the rest of the
+ * wardrobe rather than with the drawing, so the drawer and the dice agree on it.
+ */
+export const BABY_TOPS: Array<{ id: string; name: string }> = [
+  { id: "babygro", name: "Babygro" },
+  { id: "romper", name: "Romper" },
+  { id: "sleepsuit", name: "Sleepsuit" },
+  { id: "dungarees", name: "Dungarees" },
+  { id: "sunDress", name: "Sundress" },
+];
+
+/**
+ * A baby's random look. Rolling the grown-up one gave it a hoodie, cat ears and glasses —
+ * all of which the drawer had already hidden, and none of which a baby can show — so the
+ * dice appeared to do nothing at all.
+ */
+export function randomBabyLook(from: AvatarLook): AvatarLook {
+  const byId = (id: CategoryId) => CATEGORIES.find((c) => c.id === id)!.items;
+  return {
+    ...from,
+    skin: pick(SKIN_TONES),
+    hairColour: pick(HAIR_COLOURS),
+    eyesId: pick(byId("eyes")).id,
+    irisColour: pick(IRIS_COLOURS),
+    noseId: pick(byId("nose")).id,
+    mouthId: pick(byId("mouth")).id,
+    blushId: maybe(0.85, pick(byId("blush")).id),
+    blushColour: pick(MAKEUP_COLOURS),
+    topId: pick(BABY_TOPS).id,
+    topColour: pick(FABRIC_COLOURS),
+  };
+}
+
 export function randomLook(): AvatarLook {
   const byId = (id: CategoryId) => CATEGORIES.find((c) => c.id === id)!.items;
   const topColour = pick(FABRIC_COLOURS);

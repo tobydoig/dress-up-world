@@ -270,6 +270,8 @@ interface DragState {
 
   /** Set when someone is sitting on the dragged piece and has to be carried along. */
   rider: { node: SVGGElement; id: string; facing: number; who: string } | null;
+  /** A baby in the dragged character's arms, which has to travel with them. */
+  carried: SVGGElement | null;
   /** Where the drag has got to: a piece's offset, or the character's position. */
   x: number;
   y: number;
@@ -513,7 +515,14 @@ const Character = memo(function Character({
         {kind === "baby" ? (
           <BabyLayers look={look} />
         ) : (
-          <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} mouthOpen={mouthOpen} />
+          <AvatarLayers
+            look={look}
+            uid={uid}
+            pose={pose}
+            chewing={chewing}
+            mouthOpen={mouthOpen}
+            carrying={rocking}
+          />
         )}
       </g>
     </g>
@@ -885,6 +894,12 @@ export function ExploreMode({
   function applyDrag(drag: DragState) {
     if (drag.target.kind === "avatar") {
       drag.node.setAttribute("transform", characterTransform(drag.x, drag.y, drag.pose));
+      // Whoever is being carried rides along. Without this the baby stayed where the
+      // carrier had been standing and only caught up once the drag was over.
+      drag.carried?.setAttribute(
+        "transform",
+        characterTransform(drag.x + CARRY.dx, drag.y + CARRY.dy, "stand", CARRY.scale)
+      );
       return;
     }
     const placed = pieceTransform(drag.x, drag.y);
@@ -1000,6 +1015,15 @@ export function ExploreMode({
     }
 
     let rider: DragState["rider"] = null;
+    let carried: SVGGElement | null = null;
+    if (target.kind === "avatar") {
+      const baby = babyOf(target.id);
+      carried = baby
+        ? svgRef.current?.querySelector<SVGGElement>(
+            'g.character[data-avatar="' + baby.id + '"]'
+          ) ?? null
+        : null;
+    }
     if (target.kind === "furniture") {
       const svg = svgRef.current;
       const current = roomStateRef.current;
@@ -1126,6 +1150,7 @@ export function ExploreMode({
       bounds,
       node,
       rider,
+      carried,
       x: originX,
       y: originY,
       pose: (target.kind === "avatar" && placeOf(target.id)?.pose) || "stand",

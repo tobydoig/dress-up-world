@@ -2079,3 +2079,21 @@ button {
     animation: none;
   }
 }
+
+/* ---------- arms full ---------- */
+
+/*
+ * Both arms up and in, making a cradle. Carrying replaces the idle fidgets rather than
+ * running alongside them — an arm that wanders off to scratch an ear drops the baby.
+ */
+.av-carrying .av-arm-l {
+  transform-box: fill-box;
+  transform-origin: 100% 0%;
+  transform: rotate(74deg);
+}
+
+.av-carrying .av-arm-r {
+  transform-box: fill-box;
+  transform-origin: 0% 0%;
+  transform: rotate(-70deg);
+}

@@ -39,7 +39,7 @@ import {
   slotAt,
 } from "./furniture";
 import { CROPS, isThirsty, ripeness } from "../data/growing";
-import { SIGHTS } from "../data/sky";
+import { EYE, FOUND_WITHIN, SIGHTS, SKY_DUST, SKY_H, SKY_W } from "../data/sky";
 import { FURNITURE_GROUPS, ROOMS, ROOM_ORDER, type RoomDef, type RoomId } from "../data/rooms";
 import {
   APPLIANCES,
@@ -247,13 +247,6 @@ const CLOUDS: Array<[number, number, number]> = [
   [70, 60, 1],
   [188, 36, 0.8],
   [252, 86, 0.6],
-];
-
-/** A scatter behind whatever the telescope is pointed at, so nothing floats in a void. */
-const SKY_DUST: Array<[number, number, number]> = [
-  [24, 40, 1.6], [58, 22, 1.2], [168, 36, 1.8], [186, 96, 1.3], [150, 168, 1.5],
-  [40, 170, 1.4], [16, 110, 1.2], [96, 22, 1.5], [178, 140, 1.2], [70, 186, 1.4],
-  [128, 42, 1.1], [30, 82, 1.3],
 ];
 
 /** Fixed so the stars don't jump about every time the room re-renders. */
@@ -841,8 +834,10 @@ export function ExploreMode({
   /** Which basket slots are waiting in the pot. Indices, so two of the same thing still work. */
   const [pot, setPot] = useState<number[]>([]);
   const [padId, setPadId] = useState<string | null>(null);
-  /** Which of the sky's sights the eyepiece is on, or null when nobody is looking. */
-  const [sight, setSight] = useState<number | null>(null);
+  /** Whether anybody is at the eyepiece. Where they are pointing it lives in a ref below. */
+  const [stargazing, setStargazing] = useState(false);
+  /** Whichever sight is near enough the middle to have been found, if any. */
+  const [found, setFound] = useState<string | null>(null);
   const [reaction, setReaction] = useState<string | null>(null);
   /** Who is mid-mouthful, if anyone. */
   const [chewingId, setChewingId] = useState<string | null>(null);
@@ -863,6 +858,14 @@ export function ExploreMode({
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const binRef = useRef<HTMLDivElement>(null);
+  /**
+   * Where the telescope is pointed, as the top-left of the eyepiece within the sky. Kept in
+   * a ref and written straight to the transform, for the same reason a dragged piece is:
+   * a render per pointer move to move one group is how the drag came to lag the finger.
+   */
+  const skyAt = useRef({ x: 40, y: 30 });
+  const skyEyeRef = useRef<HTMLDivElement>(null);
+  const skyFieldRef = useRef<SVGGElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const thingDragRef = useRef<ThingDrag | null>(null);
   /**
@@ -986,6 +989,60 @@ export function ExploreMode({
     const svg = svgRef.current;
     if (!svg) return [];
     return [...svg.querySelectorAll<SVGGElement>('[data-follows="' + id + '"]')];
+  }
+
+  function skyTransform(at: { x: number; y: number }): string {
+    return "translate(" + -at.x + " " + -at.y + ")";
+  }
+
+  /** Whichever sight is near enough the middle of the eyepiece to count as found. */
+  function sightAt(at: { x: number; y: number }): string | null {
+    const cx = at.x + EYE / 2;
+    const cy = at.y + EYE / 2;
+    let nearest: string | null = null;
+    let best = FOUND_WITHIN;
+    for (const s of SIGHTS) {
+      const gap = Math.hypot(s.x - cx, s.y - cy);
+      if (gap < best) {
+        best = gap;
+        nearest = s.id;
+      }
+    }
+    return nearest;
+  }
+
+  /**
+   * Sweeping the sky. Clamped to its edges, so however hard she drags there is always
+   * something there — an empty black screen would read as the telescope having broken.
+   */
+  function startPan(e: ReactPointerEvent<HTMLDivElement>) {
+    const eye = skyEyeRef.current;
+    if (!eye) return;
+    const box = eye.getBoundingClientRect();
+    // The eyepiece is square and shows exactly EYE units, so this is its scale.
+    const perUnit = box.width / EYE;
+    const from = { x: e.clientX, y: e.clientY };
+    const start = { ...skyAt.current };
+
+    const move = (ev: PointerEvent) => {
+      const next = {
+        x: clamp(start.x - (ev.clientX - from.x) / perUnit, 0, SKY_W - EYE),
+        y: clamp(start.y - (ev.clientY - from.y) / perUnit, 0, SKY_H - EYE),
+      };
+      skyAt.current = next;
+      skyFieldRef.current?.setAttribute("transform", skyTransform(next));
+      const now = sightAt(next);
+      // Only when it changes: this is a render, and there is one of these per finger move.
+      setFound((was) => (was === now ? was : now));
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
   }
 
   function isOverBin(drag: DragState, ev: PointerEvent): boolean {
@@ -1325,7 +1382,11 @@ export function ExploreMode({
         setReaction("Too bright! Come back when it's dark.");
         playTap();
       } else {
-        setSight(0);
+        // Starts pointed at a corner of nothing in particular. Opening onto a planet would
+        // hand her the answer before she had looked.
+        skyAt.current = { x: 40, y: 30 };
+        setFound(null);
+        setStargazing(true);
         playSparkle();
       }
       return;
@@ -2083,61 +2144,62 @@ export function ExploreMode({
           </div>
         )}
 
-        {sight !== null && (
+        {stargazing && (
           <div className="sky-view">
             {/*
-             * A round hole in the dark, because that is what looking through a telescope is.
-             * The sights are paged rather than panned: a four-year-old can press an arrow,
-             * and cannot hunt across a sky for something she has never seen.
+             * A round hole in the dark, because that is what looking down a telescope is.
+             * Dragging inside it sweeps across a sky several eyepieces wide. Nothing
+             * announces what is out there: the reward for looking is the finding, which is
+             * the only reason to keep looking.
              */}
-            <div className="sky-eye">
-              <svg viewBox="0 0 200 200" aria-hidden="true">
+            <div
+              ref={skyEyeRef}
+              className="sky-eye"
+              onPointerDown={startPan}
+              aria-label="Drag to look around the sky"
+            >
+              <svg viewBox={"0 0 " + EYE + " " + EYE} aria-hidden="true">
                 <defs>
                   <clipPath id="sky-hole">
-                    <circle cx={100} cy={100} r={100} />
+                    <circle cx={EYE / 2} cy={EYE / 2} r={EYE / 2} />
                   </clipPath>
                 </defs>
+                <rect x={0} y={0} width={EYE} height={EYE} fill="#0d1240" />
                 <g clipPath="url(#sky-hole)">
-                  <circle cx={100} cy={100} r={100} fill="#0d1240" />
-                  {/* A scatter behind everything, so even a planet sits among stars. */}
-                  {SKY_DUST.map(([x, y, r]) => (
-                    <circle key={x + ":" + y} cx={x} cy={y} r={r} fill="#fffdfa" opacity={0.5} />
-                  ))}
-                  {/* Static markup from our own module — no input of any kind reaches
-                      this, and the sights are plain shapes written by hand in sky.ts. */}
-                  <g dangerouslySetInnerHTML={{ __html: SIGHTS[sight].art() }} />
+                  <g ref={skyFieldRef} transform={skyTransform(skyAt.current)}>
+                    {SKY_DUST.map(([x, y, r]) => (
+                      <circle key={x + ":" + y + ":" + r} cx={x} cy={y} r={r} fill="#fffdfa" opacity={0.5} />
+                    ))}
+                    {SIGHTS.map((s) => (
+                      <g
+                        key={s.id}
+                        transform={"translate(" + s.x + " " + s.y + ")"}
+                        dangerouslySetInnerHTML={{ __html: s.art() }}
+                      />
+                    ))}
+                  </g>
                 </g>
               </svg>
             </div>
 
-            <p className="sky-name">{SIGHTS[sight].name}</p>
-            <p className="sky-note">{SIGHTS[sight].note}</p>
+            {/* Only once she has one in the middle. Before that there is nothing to say. */}
+            {found ? (
+              <>
+                <p className="sky-name">{SIGHTS.find((s) => s.id === found)!.name}</p>
+                <p className="sky-note">{SIGHTS.find((s) => s.id === found)!.note}</p>
+              </>
+            ) : (
+              <>
+                <p className="sky-name sky-searching">Have a look around…</p>
+                <p className="sky-note">Drag inside the circle to move the telescope.</p>
+              </>
+            )}
 
-            <button
-              className="room-arrow room-arrow-left"
-              aria-label="The one before"
-              onClick={() => {
-                setSight((i) => ((i ?? 0) - 1 + SIGHTS.length) % SIGHTS.length);
-                playTap();
-              }}
-            >
-              ‹
-            </button>
-            <button
-              className="room-arrow room-arrow-right"
-              aria-label="The next one"
-              onClick={() => {
-                setSight((i) => ((i ?? 0) + 1) % SIGHTS.length);
-                playTap();
-              }}
-            >
-              ›
-            </button>
             <button
               className="sheet-close sky-close"
               aria-label="Stop looking"
               onClick={() => {
-                setSight(null);
+                setStargazing(false);
                 playTap();
               }}
             >

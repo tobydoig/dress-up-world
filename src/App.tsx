@@ -281,7 +281,6 @@ export function App() {
           onSelect={selectCharacter}
           onDelete={deleteCharacter}
           onNew={newCharacter}
-          onBack={save.characters.length > 0 ? () => setMode("explore") : null}
         />
       ) : (
         <ExploreMode

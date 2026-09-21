@@ -1203,17 +1203,22 @@ button {
 
 /* ---------- carrying a thing from the basket into a cupboard ---------- */
 
-/* Rides above the fingertip rather than under it. Centred on the pointer it was covered by
-   the finger holding it on a phone, and it sat squarely over whatever it was being offered
-   to — which hid the character opening her mouth at the moment that feedback was the point.
-   Fixed rather than absolute so the stage can't clip it, and pointer-events off so it never
-   becomes the thing under the finger. */
+/*
+ * Centred on the pointer, because the drop is worked out from the pointer and the two had
+ * better be the same place. It used to ride well above the fingertip so a finger on a phone
+ * wouldn't cover it — which was true, and also meant the thing you could see was not the
+ * thing being tested, so you had to aim the cursor at the baby rather than the bottle.
+ * Being honest about where it is beats being easy to see.
+ *
+ * Fixed rather than absolute so the stage can't clip it, and pointer-events off so it never
+ * becomes the thing under the finger.
+ */
 .held-thing {
   position: fixed;
   z-index: 40;
   width: 54px;
   height: 54px;
-  margin: -74px 0 0 -27px;
+  margin: -27px 0 0 -27px;
   padding: 4px;
   border-radius: 14px;
   background: rgba(20, 12, 44, 0.75);

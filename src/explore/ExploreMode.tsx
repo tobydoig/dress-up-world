@@ -139,11 +139,17 @@ const SEATS: Record<string, Spot[]> = {
   chairLeft: [{ zones: [{ x: 124, y: 328 }], x: 124, y: 324, pose: "sit" }],
   chairRight: [{ zones: [{ x: 288, y: 328 }], x: 288, y: 324, pose: "sit" }],
   bed: [{ zones: [{ x: 286, y: 330 }, { x: 330, y: 250 }], x: 369, y: 220, pose: "lie" }],
+  /*
+   * A lying figure's x is its FEET and it extends backwards from there — a baby is only
+   * about 43 long, so putting its feet at the far end left it bunched up at the bottom of
+   * the cot with the pillow empty. Its head sits 39 behind its feet, so these are the foot
+   * positions that land a head on the pillow (centred on 57) and under the pram's hood.
+   */
   cot: [
-    { zones: [{ x: 90, y: 330 }, { x: 90, y: 250 }], x: 140, y: 228, pose: "lie", babyOnly: true },
+    { zones: [{ x: 90, y: 330 }, { x: 90, y: 250 }], x: 97, y: 228, pose: "lie", babyOnly: true },
   ],
   pram: [
-    { zones: [{ x: 292, y: 330 }, { x: 292, y: 240 }], x: 348, y: 216, pose: "lie", babyOnly: true },
+    { zones: [{ x: 292, y: 330 }, { x: 292, y: 240 }], x: 314, y: 234, pose: "lie", babyOnly: true },
   ],
   /*
    * Both zones are at floor level, because a character cannot be dragged any higher than

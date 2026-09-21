@@ -1776,3 +1776,48 @@ button {
 .av-blink {
   animation-delay: var(--phase-blink, 0s);
 }
+
+/* ---------- naming a character ---------- */
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 10px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 2px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.name-row:focus-within {
+  border-color: var(--yellow);
+}
+
+.name-icon {
+  flex: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 0;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ink);
+  background: none;
+  border: none;
+  outline: none;
+  /* The one field in the game, and the only place text may be selected. */
+  user-select: text;
+}
+
+.name-input::placeholder {
+  font-weight: 700;
+  color: var(--ink-dim);
+  opacity: 0.85;
+}

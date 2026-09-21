@@ -8,6 +8,7 @@ import type { RoomId } from "./data/rooms";
 import {
   BASKET_LIMIT,
   MAX_CAST,
+  NAME_MAX,
   TIME_ORDER,
   castHome,
   loadSave,
@@ -45,6 +46,10 @@ export function App() {
     const s = loadSave();
     return s.characters.find((c) => c.id === s.activeId)?.look ?? DEFAULT_LOOK;
   });
+  const [name, setName] = useState<string>(() => {
+    const s = loadSave();
+    return s.characters.find((c) => c.id === s.activeId)?.name ?? "";
+  });
   const [muted, setMutedState] = useState(isMuted());
 
   const saveRef = useRef(save);
@@ -67,15 +72,17 @@ export function App() {
     };
   }, []);
 
-  const activeLook = save.characters.find((c) => c.id === save.activeId)?.look ?? null;
 
   function saveAndPlay() {
     setSave((prev) => {
       const existing = editingId ? prev.characters.find((c) => c.id === editingId) : undefined;
+      const given = name.trim();
       if (existing) {
         return {
           ...prev,
-          characters: prev.characters.map((c) => (c.id === existing.id ? { ...c, look } : c)),
+          characters: prev.characters.map((c) =>
+            c.id === existing.id ? { ...c, look, name: given || c.name } : c
+          ),
           activeId: existing.id,
         };
       }
@@ -83,7 +90,10 @@ export function App() {
       setEditingId(id);
       return {
         ...prev,
-        characters: [...prev.characters, { id, name: "Character " + (prev.characters.length + 1), look }],
+        characters: [
+          ...prev.characters,
+          { id, name: given || "Character " + (prev.characters.length + 1), look },
+        ],
         activeId: id,
         inScene: prev.inScene.length === 0 ? [id] : prev.inScene,
       };
@@ -98,12 +108,11 @@ export function App() {
    */
   function newCharacter() {
     const id = newId();
+    const given = "Character " + (save.characters.length + 1);
+    setName(given);
     setSave((prev) => ({
       ...prev,
-      characters: [
-        ...prev.characters,
-        { id, name: "Character " + (prev.characters.length + 1), look: DEFAULT_LOOK },
-      ],
+      characters: [...prev.characters, { id, name: given, look: DEFAULT_LOOK }],
       activeId: id,
       // The very first one has to come out, or the room she is sent to is empty.
       inScene: prev.inScene.length === 0 ? [id] : prev.inScene,
@@ -122,6 +131,23 @@ export function App() {
     setSave((prev) => ({
       ...prev,
       characters: prev.characters.map((c) => (c.id === editingId ? { ...c, look: next } : c)),
+    }));
+  }
+
+  /**
+   * Renaming writes through the same way. Held as typed — including empty, so the field can
+   * be cleared and started again — and only turned into a stored name at the point it is
+   * stored, where a blank falls back to what they were called before.
+   */
+  function changeName(next: string) {
+    const trimmed = next.slice(0, NAME_MAX);
+    setName(trimmed);
+    if (!editingId) return;
+    setSave((prev) => ({
+      ...prev,
+      characters: prev.characters.map((c) =>
+        c.id === editingId ? { ...c, name: trimmed.trim() || c.name } : c
+      ),
     }));
   }
 
@@ -165,6 +191,7 @@ export function App() {
     if (!chosen) return;
     setEditingId(id);
     setLook(chosen.look);
+    setName(chosen.name);
     // Deliberately does NOT bring them out. Who is in the room is hers to choose, the same
     // way the furniture is; dressing somebody is not the same as asking for them on stage.
     setSave((prev) => ({ ...prev, activeId: id }));
@@ -178,7 +205,10 @@ export function App() {
       if (inScene.length === 0 && activeId) inScene = [activeId];
       return { ...prev, characters, activeId, inScene, rooms: forgetPlaces(prev.rooms, [id]) };
     });
-    if (editingId === id) setEditingId(null);
+    if (editingId === id) {
+      setEditingId(null);
+      setName("");
+    }
   }
 
   /**
@@ -436,6 +466,8 @@ export function App() {
         <DesignMode
           look={look}
           onChange={changeLook}
+          name={name}
+          onRename={changeName}
           characters={save.characters}
           editingId={editingId}
           onSave={saveAndPlay}
@@ -476,7 +508,11 @@ export function App() {
             setMode("design");
           }}
           onDesign={() => {
-            if (activeLook) setLook(activeLook);
+            const who = save.characters.find((c) => c.id === save.activeId);
+            if (who) {
+              setLook(who.look);
+              setName(who.name);
+            }
             setEditingId(save.activeId);
             setMode("design");
           }}

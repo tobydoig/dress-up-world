@@ -104,6 +104,12 @@ export const AVATAR_HOME = { x: 200, y: 408 };
  */
 export const MAX_CAST = 3;
 
+/**
+ * As long a name as fits a character card without being cut off. Long enough for the names a
+ * four-year-old actually picks, which are her friends' and her toys'.
+ */
+export const NAME_MAX = 14;
+
 /** Side by side, centred on the spot a lone character has always stood on. */
 export const CAST_GAP = 86;
 
@@ -314,7 +320,10 @@ export function loadSave(): GameSave {
             }
             return {
               id: c.id,
-              name: typeof c.name === "string" && c.name ? c.name : "My character",
+              name:
+                typeof c.name === "string" && c.name.trim()
+                  ? c.name.trim().slice(0, NAME_MAX)
+                  : "My character",
               look,
             };
           })

@@ -127,6 +127,7 @@ export function AvatarLayers({
   animate = true,
   pose = "stand",
   chewing = false,
+  mouthOpen = false,
 }: {
   look: AvatarLook;
   uid?: string;
@@ -134,6 +135,8 @@ export function AvatarLayers({
   pose?: Pose;
   /** Mid-mouthful: the mouth works away instead of holding its usual expression. */
   chewing?: boolean;
+  /** Something edible is being held over the face — open wide. */
+  mouthOpen?: boolean;
 }): ReactElement {
   const hair = HAIR_STYLES[look.hairId] ?? HAIR_STYLES.long;
   const eyes = EYE_STYLES[look.eyesId] ?? EYE_STYLES.round;
@@ -220,7 +223,7 @@ export function AvatarLayers({
       <g key={"head-" + look.skin}>
         <ellipse cx={EAR.leftCx} cy={EAR.cy} rx={EAR.rx} ry={EAR.ry} fill={shade(look.skin, -18)} />
         <ellipse cx={EAR.rightCx} cy={EAR.cy} rx={EAR.rx} ry={EAR.ry} fill={shade(look.skin, -18)} />
-        <circle cx={HEAD.cx} cy={HEAD.cy} r={HEAD.r} fill={look.skin} />
+        <circle className="av-face" cx={HEAD.cx} cy={HEAD.cy} r={HEAD.r} fill={look.skin} />
       </g>
 
       {look.blushId && BLUSH_STYLES[look.blushId] && (
@@ -239,7 +242,13 @@ export function AvatarLayers({
         </g>
       )}
 
-      {chewing ? (
+      {mouthOpen ? (
+        <g>
+          <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 4} rx={17} ry={15} fill="#8a3a52" />
+          <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 11} rx={10} ry={6} fill="#ff8fa8" />
+          <path d={"M" + (MOUTH.cx - 13) + "," + (MOUTH.cy - 7) + " h26"} stroke="#fffdfa" strokeWidth={4} strokeLinecap="round" />
+        </g>
+      ) : chewing ? (
         <g className="av-chew">
           <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 2} rx={13} ry={9.5} fill="#8a3a52" />
           <ellipse cx={MOUTH.cx} cy={MOUTH.cy + 5.5} rx={7.5} ry={4} fill="#ff8fa8" />

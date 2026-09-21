@@ -9,6 +9,7 @@ import {
   type ReactElement,
 } from "react";
 import { Avatar, AvatarLayers } from "../avatar/Avatar";
+import { HEAD } from "../avatar/bodyGeometry";
 import {
   CATALOGUE_CTX,
   CONTAINERS,
@@ -199,13 +200,16 @@ type ThingSource =
   | { kind: "basket"; index: number }
   | { kind: "container"; id: string; index: number };
 
+/** Somewhere a carried thing can be let go and have something happen. */
+type DropTarget = { kind: "container"; id: string } | { kind: "mouth" };
+
 interface ThingDrag {
   thingId: string;
   from: ThingSource;
   startX: number;
   startY: number;
-  /** The open container currently under the finger, if any. */
-  over: string | null;
+  /** What is currently under the finger, if anything will take what is being carried. */
+  over: DropTarget | null;
   move: (e: PointerEvent) => void;
   end: (e?: PointerEvent) => void;
 }
@@ -261,12 +265,27 @@ function pieceTransform(dx: number, dy: number): string {
   return "translate(" + dx + " " + (FURNITURE_DROP + dy) + ")";
 }
 
+const AVATAR_SCALE = 0.47;
+
 function characterTransform(x: number, y: number, pose: AvatarPose): string {
   return (
     "translate(" + x + " " + y + ")" +
     (pose === "lie" ? " rotate(-90)" : "") +
-    " scale(0.47) translate(-100 -380)"
+    " scale(" + AVATAR_SCALE + ") translate(-100 -380)"
   );
+}
+
+/**
+ * The character's face in room coordinates — worked out from the same transform rather than
+ * measured off the page, so it costs nothing to ask for on every pointer move. Lying down
+ * rotates the whole figure a quarter turn, which puts the head out to the side.
+ */
+function faceAt(room: RoomState): { x: number; y: number; r: number } {
+  const reach = AVATAR_SCALE * (HEAD.cy - 380);
+  const r = AVATAR_SCALE * HEAD.r;
+  return room.avatarPose === "lie"
+    ? { x: room.avatarX + reach, y: room.avatarY, r }
+    : { x: room.avatarX, y: room.avatarY + reach, r };
 }
 
 /**
@@ -395,6 +414,7 @@ const Character = memo(function Character({
   y,
   pose,
   chewing,
+  mouthOpen,
   dragging,
   onGrab,
 }: {
@@ -404,6 +424,7 @@ const Character = memo(function Character({
   y: number;
   pose: AvatarPose;
   chewing: boolean;
+  mouthOpen: boolean;
   dragging: boolean;
   onGrab: (e: ReactPointerEvent<SVGGElement>) => void;
 }): ReactElement {
@@ -413,7 +434,7 @@ const Character = memo(function Character({
       transform={characterTransform(x, y, pose)}
       onPointerDown={onGrab}
     >
-      <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} />
+      <AvatarLayers look={look} uid={uid} pose={pose} chewing={chewing} mouthOpen={mouthOpen} />
     </g>
   );
 });
@@ -500,6 +521,7 @@ export function ExploreMode({
   onCycleTime,
   onBuy,
   onEat,
+  onEatFrom,
   onStore,
   onTakeOut,
   onCook,
@@ -528,6 +550,7 @@ export function ExploreMode({
   onCycleTime: () => void;
   onBuy: (thingId: string) => void;
   onEat: (index: number) => void;
+  onEatFrom: (furnitureId: string, index: number) => void;
   onStore: (furnitureId: string, index: number) => void;
   onTakeOut: (furnitureId: string, index: number) => void;
   onCook: (indices: number[], dishId: string) => void;
@@ -553,7 +576,7 @@ export function ExploreMode({
     index: number | null;
     x: number;
     y: number;
-    over: string | null;
+    over: DropTarget | null;
   } | null>(null);
   const [overBin, setOverBin] = useState(false);
   /** When the sheet opened, to ignore the click that opened it arriving on the new backdrop. */
@@ -574,6 +597,8 @@ export function ExploreMode({
   // it was before anything moved.
   const basketRef = useRef(basket);
   basketRef.current = basket;
+  const lookRef = useRef(look);
+  lookRef.current = look;
 
   const room = ROOMS[roomId];
 
@@ -982,15 +1007,25 @@ export function ExploreMode({
     return clientToSvg(svgRef.current, clientX, clientY);
   }
 
-  /** Which open container the finger is over, if any. */
-  function containerUnder(clientX: number, clientY: number): string | null {
+  /** What the finger is over: a mouth to feed, an open cupboard to fill, or nothing. */
+  function dropTargetAt(clientX: number, clientY: number): DropTarget | null {
     const at = toRoom(clientX, clientY);
     if (!at) return null;
+
+    // The face wins any tie. A cupboard standing where someone's head is shouldn't get fed.
+    if (lookRef.current) {
+      const face = faceAt(roomStateRef.current);
+      // Generously wide: she is aiming at a face, not at a pair of lips.
+      if (Math.hypot(at.x - face.x, at.y - face.y) <= face.r * 1.5) return { kind: "mouth" };
+    }
+
     for (const item of openContainers()) {
       const box = CONTAINER_DROP[item.id];
       const x = box.x + item.dx;
       const y = FURNITURE_DROP + box.y + item.dy;
-      if (at.x >= x && at.x <= x + box.w && at.y >= y && at.y <= y + box.h) return item.id;
+      if (at.x >= x && at.x <= x + box.w && at.y >= y && at.y <= y + box.h) {
+        return { kind: "container", id: item.id };
+      }
     }
     return null;
   }
@@ -1003,7 +1038,7 @@ export function ExploreMode({
     const move = (ev: PointerEvent) => {
       const drag = thingDragRef.current;
       if (!drag) return;
-      drag.over = containerUnder(ev.clientX, ev.clientY);
+      drag.over = dropTargetAt(ev.clientX, ev.clientY);
       setHeld({
         thingId: drag.thingId,
         index: drag.from.kind === "basket" ? drag.from.index : null,
@@ -1043,16 +1078,21 @@ export function ExploreMode({
     playTap();
   }
 
-  function dropThing(from: ThingSource, over: string | null) {
+  function dropThing(from: ThingSource, target: DropTarget | null) {
+    if (target?.kind === "mouth") {
+      eat(from);
+      return;
+    }
+
     if (from.kind === "basket") {
       // Let go over the room rather than over a cupboard: nothing happens, it stays in hand.
-      if (!over) return;
-      const item = roomStateRef.current.items.find((i) => i.id === over);
+      if (!target) return;
+      const item = roomStateRef.current.items.find((i) => i.id === target.id);
       if (item) putIn(item, from.index);
       return;
     }
     // Out of a cupboard: dropped anywhere but back where it came from, it goes in the basket.
-    if (over === from.id) return;
+    if (target?.id === from.id) return;
     takeOut(from.id, from.index);
   }
 
@@ -1076,21 +1116,34 @@ export function ExploreMode({
     playPop();
   }
 
-  function eat(index: number) {
-    const thing = THINGS[basketRef.current[index]];
+  /** Eats whatever was dragged to the face, from the basket or straight off a shelf. */
+  function eat(from: ThingSource) {
+    const thingId =
+      from.kind === "basket"
+        ? basketRef.current[from.index]
+        : roomStateRef.current.items.find((i) => i.id === from.id)?.stored[from.index];
+    const thing = thingId ? THINGS[thingId] : undefined;
     if (!thing) return;
+
     if (thing.taste === "yuck") {
+      // Refused rather than eaten — it stays where it was.
       setReaction("Yuck! Cook it first");
       playYuck();
       return;
     }
+
     setReaction("Yum!");
     setChewing(true);
     playNom();
-    onEat(index);
+    if (from.kind === "basket") onEat(from.index);
+    else onEatFrom(from.id, from.index);
   }
 
-  /** Tapping something in the basket: into the pot, into whatever is open, or into your mouth. */
+  /**
+   * Tapping something in the basket. Eating is deliberately NOT here any more: it is done by
+   * dragging the food to the character's face. A tap was too easy to do by accident while
+   * reaching to put something away, and losing your apple to a slip is a poor lesson.
+   */
   function tapBasket(i: number) {
     if (!basketRef.current[i]) return;
 
@@ -1101,8 +1154,7 @@ export function ExploreMode({
     }
 
     // With exactly one cupboard standing open, a tap obviously means "put it away". Dragging
-    // is the real gesture, but a small child shouldn't have to be accurate to tidy up. A full
-    // cupboard falls through to eating rather than refusing — dragging into it still says so.
+    // is the real gesture, but a small child shouldn't have to be accurate to tidy up.
     const open = openContainers();
     const room = open.find((c) => c.stored.length < capacityOf(c.id));
     if (open.length === 1 && room) {
@@ -1110,7 +1162,7 @@ export function ExploreMode({
       return;
     }
 
-    eat(i);
+    playPop();
   }
 
   /** What is in the pot right now, as ingredient ids. */
@@ -1298,6 +1350,7 @@ export function ExploreMode({
                 y={roomState.avatarY}
                 pose={roomState.avatarPose}
                 chewing={chewing}
+                mouthOpen={held?.over?.kind === "mouth"}
                 dragging={draggingKey === "avatar"}
                 onGrab={grabAvatar}
               />
@@ -1312,7 +1365,10 @@ export function ExploreMode({
                   return (
                     <rect
                       key={item.id}
-                      className={"drop-zone" + (held.over === item.id ? " is-over" : "")}
+                      className={
+                        "drop-zone" +
+                        (held.over?.kind === "container" && held.over.id === item.id ? " is-over" : "")
+                      }
                       x={box.x + item.dx}
                       y={FURNITURE_DROP + box.y + item.dy}
                       width={box.w}
@@ -1322,6 +1378,16 @@ export function ExploreMode({
                     />
                   );
                 })}
+
+            {held && look && (
+              <circle
+                className={"drop-zone mouth-zone" + (held.over?.kind === "mouth" ? " is-over" : "")}
+                cx={faceAt(roomState).x}
+                cy={faceAt(roomState).y}
+                r={faceAt(roomState).r * 1.5}
+                pointerEvents="none"
+              />
+            )}
 
             {/* Nightfall goes over the whole scene, and the lamps then punch back through it. */}
             {tint.opacity > 0 && (

@@ -247,6 +247,18 @@ export function App() {
     });
   }
 
+  /** Eaten without ever reaching the basket — dragged from a shelf straight to the mouth. */
+  function eatFromContainer(furnitureId: string, index: number) {
+    updateRoom((room) => ({
+      ...room,
+      items: room.items.map((i) =>
+        i.id === furnitureId && i.stored[index] !== undefined
+          ? { ...i, stored: removeAt(i.stored, index) }
+          : i
+      ),
+    }));
+  }
+
   function cookThings(indices: number[], dishId: string) {
     setSave((prev) => {
       if (indices.length === 0 || indices.some((i) => prev.basket[i] === undefined)) return prev;
@@ -288,6 +300,7 @@ export function App() {
           onCycleTime={cycleTime}
           onBuy={buyThing}
           onEat={eatThing}
+          onEatFrom={eatFromContainer}
           onStore={storeThing}
           onTakeOut={takeOutThing}
           onCook={cookThings}

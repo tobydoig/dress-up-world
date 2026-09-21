@@ -26,6 +26,8 @@ export interface FurnitureCtx {
   thirsty: boolean;
   /** Which of its looks the piece is showing. What that means is up to the piece. */
   mode: number;
+  /** Held over a plant that is about to get a drink. Worked out by the room, like `thirsty`. */
+  pouring: boolean;
 }
 
 export type FurnitureRender = (ctx: FurnitureCtx) => ReactElement;
@@ -41,6 +43,7 @@ export const CATALOGUE_CTX: FurnitureCtx = {
   stage: 0,
   thirsty: false,
   mode: 0,
+  pouring: false,
 };
 
 /**
@@ -1042,14 +1045,45 @@ export const FURNITURE: Record<string, FurnitureRender> = {
 
   /** Dragged onto a bed to water it. Furniture rather than something carried, so watering
    *  is picking the can up and tipping it over the plant. */
-  wateringCan: () => (
+  wateringCan: (c) => (
     <g>
-      {hitPad(330, 186, 66, 46)}
-      <path d="M338,204 h34 l-4,28 h-26 z" fill="#5ed64a" />
-      <rect x={334} y={199} width={42} height={8} rx={4} fill="#3fae5a" />
-      <path d="M340,199 q9,-15 22,-2" stroke="#3fae5a" strokeWidth={4.5} fill="none" strokeLinecap="round" />
-      <path d="M374,206 l16,-10 l4,6 l-16,10 z" fill="#3fae5a" />
-      <ellipse cx={391} cy={198} rx={6} ry={4.5} fill="#9be07a" transform="rotate(-32 391 198)" />
+      {/* The hit pad is inside the tipping group on purpose: it fixes the group's bounding
+          box, which is what the pivot below is a fraction of. */}
+      <g className={"can-tip" + (c.pouring ? " is-pouring" : "")}>
+        {hitPad(330, 186, 66, 46)}
+        <path d="M338,204 h34 l-4,28 h-26 z" fill="#5ed64a" />
+        {/* Drawn from inside the body outwards, so the spout is part of the can rather than
+            a shape floating alongside it — which is what the old one, starting past the
+            body's edge and level with the collar, looked like. */}
+        <path
+          d="M366,214 L389,198"
+          stroke="#3fae5a"
+          strokeWidth={8}
+          fill="none"
+          strokeLinecap="round"
+        />
+        <rect x={334} y={199} width={42} height={8} rx={4} fill="#3fae5a" />
+        <path d="M340,199 q9,-15 22,-2" stroke="#3fae5a" strokeWidth={4.5} fill="none" strokeLinecap="round" />
+        <ellipse cx={391} cy={198} rx={6} ry={4.5} fill="#9be07a" transform="rotate(-32 391 198)" />
+      </g>
+      {/* Outside the tipping group, so the drops don't change the box the pivot is measured
+          against — and placed where the rose ends up once the can has tipped. */}
+      {c.pouring && (
+        <g>
+          {[0, 1, 2].map((i) => (
+            <ellipse
+              key={i}
+              className="can-drop"
+              cx={381 + i * 4}
+              cy={221}
+              rx={1.8}
+              ry={2.7}
+              fill="#7fd4ff"
+              style={{ animationDelay: (i * 0.21).toFixed(2) + "s" }}
+            />
+          ))}
+        </g>
+      )}
     </g>
   ),
 

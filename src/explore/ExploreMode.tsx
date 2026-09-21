@@ -376,6 +376,7 @@ const Piece = memo(function Piece({
   dragging,
   popped,
   thirsty,
+  pouring,
   onGrab,
   onGrabThing,
 }: {
@@ -384,10 +385,11 @@ const Piece = memo(function Piece({
   popped: boolean;
   /** Passed in rather than worked out here: a fresh object every render would defeat memo. */
   thirsty: boolean;
+  pouring: boolean;
   onGrab: (e: ReactPointerEvent<SVGGElement>, id: string) => void;
   onGrabThing: (e: ReactPointerEvent<SVGGElement>, from: ThingSource, thingId: string) => void;
 }): ReactElement | null {
-  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, { ...item, thirsty });
+  const art = popped ? POPPED_BALLOONS() : renderFurniture(item.id, { ...item, thirsty, pouring });
   if (!art) return null;
 
   return (
@@ -1675,6 +1677,9 @@ export function ExploreMode({
                 dragging={draggingKey === item.id}
                 popped={item.id === "balloons" && poppedAt !== null}
                 thirsty={item.planted !== null && isThirsty(item.wateredAt, now)}
+                // overPlot is only ever set over a bed with something growing in it, so the
+                // can tips for a plant and not for bare earth.
+                pouring={item.id === WATERING_CAN && overPlot !== null}
                 onGrab={grabPiece}
                 onGrabThing={grabThing}
               />

@@ -117,26 +117,42 @@ const STACK_LIFT = 110;
  * no longer an answer to where somebody is.
  */
 interface Spot {
-  zoneX: number;
-  zoneY: number;
+  /**
+   * Everywhere that counts as aiming at this spot. More than one, because a bunk can be
+   * aimed at either by its mattress or from the floor beside it — and because a character
+   * cannot be dragged above the floor line, the mattress is only ever reachable by the
+   * POINTER, never by the figure itself.
+   */
+  zones: Array<{ x: number; y: number }>;
   x: number;
   y: number;
   pose: AvatarPose;
 }
 
 const SEATS: Record<string, Spot[]> = {
-  chairLeft: [{ zoneX: 124, zoneY: 328, x: 124, y: 324, pose: "sit" }],
-  chairRight: [{ zoneX: 288, zoneY: 328, x: 288, y: 324, pose: "sit" }],
-  bed: [{ zoneX: 286, zoneY: 330, x: 369, y: 220, pose: "lie" }],
+  chairLeft: [{ zones: [{ x: 124, y: 328 }], x: 124, y: 324, pose: "sit" }],
+  chairRight: [{ zones: [{ x: 288, y: 328 }], x: 288, y: 324, pose: "sit" }],
+  bed: [{ zones: [{ x: 286, y: 330 }, { x: 330, y: 250 }], x: 369, y: 220, pose: "lie" }],
   /*
    * Both zones are at floor level, because a character cannot be dragged any higher than
    * that — so the top bunk is reached by dropping somebody at the foot of the LADDER, and
    * the bottom one by dropping them in front of the bed. Far enough apart (98) that the
    * nearest-wins search can't confuse them.
    */
+  /*
+   * The bottom bunk is aimed at from well along the bed; the top one at the LADDER, or by
+   * putting a finger on the top mattress. They have to be far apart in the only direction
+   * that is actually free: a character clamps at x=336 and at the floor line, so vertically
+   * the two are barely distinguishable and the bottom one won every time.
+   */
   bunkBed: [
-    { zoneX: 270, zoneY: 330, x: 392, y: 282, pose: "lie" },
-    { zoneX: 368, zoneY: 330, x: 392, y: 196, pose: "lie" },
+    { zones: [{ x: 238, y: 330 }, { x: 300, y: 282 }], x: 392, y: 282, pose: "lie" },
+    {
+      zones: [{ x: 372, y: 330 }, { x: 372, y: 250 }, { x: 320, y: 196 }],
+      x: 392,
+      y: 196,
+      pose: "lie",
+    },
   ],
 };
 
@@ -165,10 +181,11 @@ function seatPlace(
   return seatPlaceAt(item.id, spot, item.facing, item.dx, item.dy);
 }
 
-function seatZone(item: PlacedFurniture, spot: number): { x: number; y: number } | null {
+function seatZones(item: PlacedFurniture, spot: number): Array<{ x: number; y: number }> {
   const seat = SEATS[item.id]?.[spot];
-  if (!seat) return null;
-  return { x: seat.zoneX + item.dx + seatShift(item.id, item.facing), y: seat.zoneY + item.dy };
+  if (!seat) return [];
+  const shift = seatShift(item.id, item.facing);
+  return seat.zones.map((z) => ({ x: z.x + item.dx + shift, y: z.y + item.dy }));
 }
 
 /** Every spot a piece offers, by number. */
@@ -1157,7 +1174,9 @@ export function ExploreMode({
         return;
       }
 
-      if (drag.target.kind === "avatar") settleAvatar(drag.target.id, drag.x, drag.y);
+      if (drag.target.kind === "avatar") {
+        settleAvatar(drag.target.id, drag.x, drag.y, ev ? toRoom(ev.clientX, ev.clientY) : null);
+      }
       playPop();
     };
 
@@ -1402,7 +1421,12 @@ export function ExploreMode({
   }
 
   /** After a character is dropped, sit or lie them on whatever they landed on. */
-  function settleAvatar(who: string, x: number, y: number) {
+  function settleAvatar(
+    who: string,
+    x: number,
+    y: number,
+    at: { x: number; y: number } | null
+  ) {
     const current = roomStateRef.current;
 
     const me = castRef.current.find((m) => m.id === who);
@@ -1445,17 +1469,24 @@ export function ExploreMode({
 
     for (const item of current.items) {
       for (const spot of seatSpots(item.id)) {
-        const zone = seatZone(item, spot);
         const place = seatPlace(item, spot);
-        if (!zone || !place) continue;
+        if (!place) continue;
         // One to a spot. Two characters in the same one is a single blurred character, and
         // dragging the furniture afterwards could only ever take one of them with it.
         const taken = riderOf(item.id, spot);
         if (taken !== null && taken !== who) continue;
-        const distance = Math.hypot(x - zone.x, y - zone.y);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = { id: item.id, spot, ...place };
+        for (const zone of seatZones(item, spot)) {
+          // Measured from the figure AND from the finger, nearest of either. The figure is
+          // what a floor-level zone is for; the finger is the only thing that can reach a
+          // top bunk, since a character stops at the floor line however far up she drags.
+          const distance = Math.min(
+            Math.hypot(x - zone.x, y - zone.y),
+            at ? Math.hypot(at.x - zone.x, at.y - zone.y) : Infinity
+          );
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = { id: item.id, spot, ...place };
+          }
         }
       }
     }

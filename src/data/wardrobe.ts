@@ -252,7 +252,6 @@ export const CATEGORIES: CategoryDef[] = [
       { id: "smirk", name: "Smirk" },
       { id: "blank", name: "Blank" },
       { id: "frown", name: "Grumpy" },
-      { id: "angry", name: "Cross" },
       { id: "sad", name: "Sad" },
     ],
   },

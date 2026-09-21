@@ -260,34 +260,6 @@ export const MOUTH_STYLES: Record<string, () => ReactElement> = {
     </g>
   ),
 
-  /* Gritted, not merely turned down — the frown already does turned down, and next to it a
-     second sad mouth would not read as a different feeling at all. */
-  angry: () => (
-    <g>
-      <path
-        d={
-          "M" + (MOUTH.cx - 17) + "," + (MOUTH.cy + 7) + " q17,-15 34,0 q-17,8 -34,0 z"
-        }
-        fill={MOUTH_DARK}
-      />
-      {/* A straight band of teeth with the gaps drawn in. The zigzag this replaces was
-          meant to read as gritted and read as a cartoon saw. */}
-      <path
-        d={"M" + (MOUTH.cx - 14) + "," + (MOUTH.cy + 1) + " h28 v5 h-28 z"}
-        fill="#fffdfa"
-      />
-      <path
-        d={
-          "M" + (MOUTH.cx - 7) + "," + (MOUTH.cy + 1) + " v5 " +
-          "M" + MOUTH.cx + "," + (MOUTH.cy + 1) + " v5 " +
-          "M" + (MOUTH.cx + 7) + "," + (MOUTH.cy + 1) + " v5"
-        }
-        stroke={MOUTH_DARK}
-        strokeWidth={1.6}
-      />
-    </g>
-  ),
-
   frown: () => (
     <path
       d={"M" + (MOUTH.cx - 15) + "," + (MOUTH.cy + 9) + " Q" + MOUTH.cx + "," + (MOUTH.cy - 5) + " " + (MOUTH.cx + 15) + "," + (MOUTH.cy + 9)}

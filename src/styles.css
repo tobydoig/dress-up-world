@@ -1824,23 +1824,16 @@ button {
 
 /* ---------- watering ---------- */
 
+/* The can's tip and lift are inline transforms, not classes — see furniture.tsx. Only the
+   falling water lives here. */
 /*
- * The can tips as it comes over a plant and rights itself when it leaves. The pivot is a
- * fraction of the can's own box rather than a point in room coordinates, because the can is
- * dragged and a fixed point would stop being the handle the moment it moved. The hit pad is
- * inside the same group to keep that box from changing.
+ * fill-box is not optional here. Without it the scale in the keyframes below is taken about
+ * the middle of the whole room rather than the middle of the droplet, which threw two drops
+ * in three right off the side of the garden.
  */
-.can-tip {
-  transform-box: fill-box;
-  transform-origin: 39% 24%;
-  transition: transform 0.25s ease-out;
-}
-
-.can-tip.is-pouring {
-  transform: rotate(32deg);
-}
-
 .can-drop {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   animation: can-drop 0.72s linear infinite;
 }
 
@@ -1853,16 +1846,12 @@ button {
     opacity: 1;
   }
   100% {
-    transform: translateY(24px) scale(1);
+    transform: translateY(42px) scale(1);
     opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .can-tip {
-    transition: none;
-  }
-
   .can-drop {
     animation: none;
   }

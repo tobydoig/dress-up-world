@@ -1552,3 +1552,67 @@ button {
     animation: none;
   }
 }
+
+/* ---------- the cooker's appliances ---------- */
+
+.tray-appliances {
+  padding-top: 2px;
+}
+
+.tray-appliance {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #58e2a8, #2ec98c);
+  color: #0d3a28;
+  box-shadow: 0 3px 0 #1f9d6c;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tray-appliance .tray-name {
+  color: #0d3a28;
+}
+
+.tray-appliance-icon {
+  font-size: 1.4rem;
+  line-height: 1.1;
+}
+
+.tray-appliance:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.tray-appliance:not(:disabled):active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+/* A slot the recipe is still waiting for — enough to say "there's more", not enough to say
+   what, which is what keeps it a puzzle. */
+.tray-slot.is-hint {
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: var(--yellow);
+  border-color: var(--yellow);
+  opacity: 0.55;
+  animation: hint-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes hint-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray-slot.is-hint {
+    animation: none;
+  }
+}

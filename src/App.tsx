@@ -247,12 +247,13 @@ export function App() {
     });
   }
 
-  function cookThings(indexA: number, indexB: number, dishId: string) {
+  function cookThings(indices: number[], dishId: string) {
     setSave((prev) => {
-      const [lo, hi] = indexA < indexB ? [indexA, indexB] : [indexB, indexA];
-      if (prev.basket[lo] === undefined || prev.basket[hi] === undefined) return prev;
-      // The higher index goes first, or removing the lower one would shift it out from under us.
-      return { ...prev, basket: [...removeAt(removeAt(prev.basket, hi), lo), dishId] };
+      if (indices.length === 0 || indices.some((i) => prev.basket[i] === undefined)) return prev;
+      // Highest index first, or removing an earlier one shifts the rest out from under us.
+      let basket = prev.basket;
+      for (const i of [...indices].sort((a, b) => b - a)) basket = removeAt(basket, i);
+      return { ...prev, basket: [...basket, dishId] };
     });
   }
 

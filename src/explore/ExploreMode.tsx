@@ -30,7 +30,15 @@ import {
   slotAt,
 } from "./furniture";
 import { FURNITURE_GROUPS, ROOMS, ROOM_ORDER, type RoomDef, type RoomId } from "../data/rooms";
-import { STALL_STOCK, THINGS, recipeFor } from "../data/things";
+import {
+  APPLIANCES,
+  MAX_POT,
+  STALL_STOCK,
+  THINGS,
+  recipeFor,
+  stillMissing,
+  type Method,
+} from "../data/things";
 import type { AvatarLook } from "../data/wardrobe";
 import {
   BASKET_LIMIT,
@@ -522,7 +530,7 @@ export function ExploreMode({
   onEat: (index: number) => void;
   onStore: (furnitureId: string, index: number) => void;
   onTakeOut: (furnitureId: string, index: number) => void;
-  onCook: (indexA: number, indexB: number, dishId: string) => void;
+  onCook: (indices: number[], dishId: string) => void;
   characters: SavedCharacter[];
   activeId: string | null;
   onSwitchCharacter: (id: string) => void;
@@ -1087,7 +1095,7 @@ export function ExploreMode({
     if (!basketRef.current[i]) return;
 
     if (tray?.kind === "cooker") {
-      setPot((p) => (p.includes(i) ? p.filter((n) => n !== i) : p.length < 2 ? [...p, i] : p));
+      setPot((p) => (p.includes(i) ? p.filter((n) => n !== i) : p.length < MAX_POT ? [...p, i] : p));
       playTap();
       return;
     }
@@ -1105,18 +1113,25 @@ export function ExploreMode({
     eat(i);
   }
 
-  function cook() {
-    if (pot.length < 2) return;
-    const a = basket[pot[0]];
-    const b = basket[pot[1]];
-    const match = a && b ? recipeFor(a, b) : null;
+  /** What is in the pot right now, as ingredient ids. */
+  function potContents(): string[] {
+    return pot.map((i) => basket[i]).filter((id): id is string => id !== undefined);
+  }
+
+  function cook(method: Method) {
+    const ids = potContents();
+    if (ids.length === 0) return;
+
+    const match = recipeFor(method, ids);
     if (!match) {
-      setReaction("Those two don't go together");
+      // Nothing is taken away for a failed attempt. Charging a child ingredients for being
+      // curious is the fastest way to stop her being curious.
+      setReaction("That didn't work — try it another way");
       playYuck();
-      setPot([]);
       return;
     }
-    onCook(pot[0], pot[1], match.makes);
+
+    onCook(pot, match.makes);
     setPot([]);
     setReaction("You made " + THINGS[match.makes].name.toLowerCase() + "!");
     playChime();
@@ -1430,11 +1445,12 @@ export function ExploreMode({
 
             {tray.kind === "cooker" && (
               <>
-                <p className="tray-hint">Pick two things from your basket and cook them.</p>
+                <p className="tray-hint">{cookerHint(potContents())}</p>
                 <div className="tray-row">
-                  {[0, 1].map((slot) => {
-                    const thingId = pot[slot] !== undefined ? basket[pot[slot]] : undefined;
-                    return thingId ? (
+                  {pot.map((basketIndex, slot) => {
+                    const thingId = basket[basketIndex];
+                    if (!thingId) return null;
+                    return (
                       <button
                         key={slot}
                         className="tray-item"
@@ -1446,21 +1462,45 @@ export function ExploreMode({
                         <ThingArt id={thingId} />
                         <span className="tray-name">{THINGS[thingId].name}</span>
                       </button>
-                    ) : (
-                      <span key={slot} className="tray-slot" />
                     );
                   })}
-                  <button className="tray-cook" disabled={pot.length < 2} onClick={cook}>
-                    🍳 Cook!
-                  </button>
+
+                  {/* One faint slot for each thing the nearest recipe is still waiting for.
+                      It says "there's more to this" without saying what, which is the
+                      difference between a puzzle and a lottery. */}
+                  {Array.from({ length: hintSlots(potContents()) }).map((_, i) => (
+                    <span key={"hint" + i} className="tray-slot is-hint">
+                      ?
+                    </span>
+                  ))}
+
+                  {pot.length === 0 && <span className="tray-slot" />}
+                </div>
+
+                <div className="tray-row tray-appliances">
+                  {APPLIANCES.map((appliance) => (
+                    <button
+                      key={appliance.id}
+                      className="tray-appliance"
+                      disabled={pot.length === 0}
+                      onClick={() => cook(appliance.id)}
+                    >
+                      <span className="tray-appliance-icon">{appliance.icon}</span>
+                      <span className="tray-name">{appliance.name}</span>
+                    </button>
+                  ))}
                 </div>
               </>
             )}
 
+            {/* What she is carrying travels with the tray, so both halves of a move are on
+                screen at once. */}
             <div className="tray-basket">
               <span className="tray-label">🧺 Your basket</span>
               <div className="tray-row">
-                {basket.length === 0 && <span className="tray-empty">Nothing yet — try the market.</span>}
+                {basket.length === 0 && (
+                  <span className="tray-empty">Nothing yet — try the market.</span>
+                )}
                 {basket.map((thingId, i) => (
                   <button
                     key={thingId + "-" + i}
@@ -1643,6 +1683,20 @@ export function ExploreMode({
       )}
     </div>
   );
+}
+
+/** How many faint "still needs something" slots to show alongside what is in the pot. */
+function hintSlots(ids: string[]): number {
+  const missing = stillMissing(ids);
+  return missing === null ? 0 : Math.min(missing, MAX_POT - ids.length);
+}
+
+function cookerHint(ids: string[]): string {
+  if (ids.length === 0) return "Put something in, then choose how to cook it.";
+  const missing = stillMissing(ids);
+  if (missing === null) return "That's an unusual mixture. Try it and see!";
+  if (missing === 0) return "That could make something — now pick how to cook it.";
+  return missing === 1 ? "Nearly — one more thing?" : "This needs a few more things.";
 }
 
 function trayTitle(tray: Tray): string {
